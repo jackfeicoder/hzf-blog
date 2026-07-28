@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+*.db
+backend/blog.db
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.local
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+backend/.env
+
+# IDE / OS
+.idea/
+.vscode/
+.claude/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Archives / logs
+*.zip
+*.log
+*.tar.gz
+.npm-cache/
