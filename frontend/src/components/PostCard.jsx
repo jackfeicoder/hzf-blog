@@ -2,9 +2,12 @@ import { Link } from 'react-router-dom'
 import { formatNum, timeAgo } from '../utils'
 import { avatarText } from './Layout'
 
-export default function PostCard({ post }) {
+export default function PostCard({ post, index = 0 }) {
   return (
-    <article className="post-card">
+    <article
+      className="post-card anim-up"
+      style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+    >
       <div className="post-card-meta">
         <Link to={`/u/${post.author.username}`} className="author-link">
           <span className="avatar xs">{avatarText(post.author.nickname || post.author.username)}</span>
@@ -45,5 +48,16 @@ export default function PostCard({ post }) {
         </div>
       </div>
     </article>
+  )
+}
+
+export function PostCardSkeleton() {
+  return (
+    <div className="post-card skeleton-card">
+      <div className="sk sk-line w-40" />
+      <div className="sk sk-line w-80 lg" />
+      <div className="sk sk-line w-95" />
+      <div className="sk sk-line w-70" />
+    </div>
   )
 }
