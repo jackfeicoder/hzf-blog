@@ -18,7 +18,19 @@ export default function Home() {
   const [total, setTotal] = useState(0)
   const [hot, setHot] = useState([])
   const [authors, setAuthors] = useState([])
-  const [loading, setLoading] = useState(true)
+const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true')
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark')
+      localStorage.setItem('darkMode', 'true')
+    } else {
+      document.documentElement.classList.remove('dark')
+      localStorage.setItem('darkMode', 'false')
+    }
+  }, [darkMode])
+
+  const toggleDarkMode = () => setDarkMode(!darkMode)
   const [q, setQ] = useState(search)
   const pageSize = 10
 
