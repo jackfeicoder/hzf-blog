@@ -18,19 +18,7 @@ export default function Home() {
   const [total, setTotal] = useState(0)
   const [hot, setHot] = useState([])
   const [authors, setAuthors] = useState([])
-const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true')
-
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark')
-      localStorage.setItem('darkMode', 'true')
-    } else {
-      document.documentElement.classList.remove('dark')
-      localStorage.setItem('darkMode', 'false')
-    }
-  }, [darkMode])
-
-  const toggleDarkMode = () => setDarkMode(!darkMode)
+  const [loading, setLoading] = useState(true)
   const [q, setQ] = useState(search)
   const pageSize = 10
 
@@ -126,7 +114,6 @@ const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') 
           </form>
         </div>
 
-        {/* 手机分类横滑 */}
         <div className="cat-scroll mobile-only">
           <button
             type="button"
@@ -223,11 +210,7 @@ const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') 
 
         {totalPages > 1 && (
           <div className="pager">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => update({ page: page - 1 })}
-            >
+            <button type="button" disabled={page <= 1} onClick={() => update({ page: page - 1 })}>
               上一页
             </button>
             <span>
@@ -243,7 +226,6 @@ const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') 
           </div>
         )}
 
-        {/* 手机：热榜与作者 */}
         <div className="mobile-discover mobile-only">
           <details className="panel discover-block" open>
             <summary className="panel-title">🔥 热门文章</summary>
@@ -306,8 +288,7 @@ const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') 
                   <span>
                     <div>{a.user.nickname || a.user.username}</div>
                     <div className="muted tiny">
-                      {a.post_count} 篇 · 👍 {formatNum(a.total_likes)} · 👁{' '}
-                      {formatNum(a.total_views)}
+                      {a.post_count} 篇 · 👍 {formatNum(a.total_likes)} · 👁 {formatNum(a.total_views)}
                     </div>
                   </span>
                 </Link>
