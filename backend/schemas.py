@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------- 用户 ----------
@@ -63,11 +63,58 @@ class CategoryOut(BaseModel):
 # ---------- 文章 ----------
 class PostIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
-    content: str = Field(min_length=1)
-    summary: str = Field(default="", max_length=500)
+    content: str = Field(min_length=1, max_length=500_000)  # 约 50 万字符，长文足够
+    summary: str = Field(default="", max_length=2000)
     category_id: Optional[int] = None
-    tags: list[str] = []
+    tags: list[str] = Field(default_factory=list, max_length=20)
     published: bool = True
+
+    @field_validator("title", "content", "summary", mode="before")
+    @classmethod
+    def strip_str(cls, v):
+        if isinstance(v, str):
+            return v.strip() if v is not None else v
+        return v
+
+    @field_validator("summary", mode="before")
+    @classmethod
+    def empty_summary(cls, v):
+        # null / 缺省都当空串，避免 422
+        return v or ""
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def normalize_tags(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            parts = [p.strip() for p in v.replace("，", ",").split(",")]
+            return [p for p in parts if p][:20]
+        if isinstance(v, list):
+            out = []
+            for item in v:
+                s = str(item).strip()
+                if s and s not in out:
+                    out.append(s[:50])
+            return out[:20]
+        return []
+
+    @field_validator("category_id", mode="before")
+    @classmethod
+    def empty_category(cls, v):
+        if v is None or v == "" or v == 0 or v == "0":
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
+    @field_validator("content")
+    @classmethod
+    def content_not_blank(cls, v: str):
+        if not v or not v.strip():
+            raise ValueError("正文不能为空")
+        return v
 
 
 class TagOut(BaseModel):

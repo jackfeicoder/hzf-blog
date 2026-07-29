@@ -51,8 +51,8 @@ class Post(Base):
 
     id = Column(Integer, primary_key=True)
     title = Column(String(200), nullable=False)
-    summary = Column(String(500), default="")
-    content = Column(Text, nullable=False)  # Markdown 原文
+    summary = Column(Text, default="")  # 长摘要/自动截取不再受 500 限制
+    content = Column(Text, nullable=False)  # Markdown 原文，SQLite/MySQL TEXT 可很大
     published = Column(Boolean, default=True)
     views = Column(Integer, default=0, nullable=False)
     like_count = Column(Integer, default=0, nullable=False)

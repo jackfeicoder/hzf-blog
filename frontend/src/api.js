@@ -19,7 +19,22 @@ async function request(path, { method = 'GET', body, auth = false } = {}) {
     let detail = `请求失败 (${res.status})`
     try {
       const data = await res.json()
-      if (data.detail) detail = typeof data.detail === 'string' ? data.detail : detail
+      if (data.detail) {
+        if (typeof data.detail === 'string') {
+          detail = data.detail
+        } else if (Array.isArray(data.detail)) {
+          // FastAPI / Pydantic 422: [{loc, msg, type}, ...]
+          detail = data.detail
+            .map((e) => {
+              const field = Array.isArray(e.loc) ? e.loc.slice(1).join('.') : ''
+              const msg = e.msg || e.message || JSON.stringify(e)
+              return field ? `${field}: ${msg}` : msg
+            })
+            .join('；')
+        } else {
+          detail = JSON.stringify(data.detail)
+        }
+      }
     } catch { /* ignore */ }
     throw new Error(detail)
   }

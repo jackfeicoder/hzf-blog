@@ -20,6 +20,17 @@ HOT_SCORE = (
 )
 
 
+def _make_summary(summary: str, content: str, limit: int = 200) -> str:
+    """摘要：优先用户填写；否则从正文截取（去掉多余空白）"""
+    s = (summary or "").strip()
+    if s:
+        return s[:2000]
+    plain = " ".join((content or "").split())
+    if len(plain) <= limit:
+        return plain
+    return plain[:limit].rstrip() + "…"
+
+
 def _get_or_create_tags(db: Session, names: list[str]) -> list[models.Tag]:
     tags = []
     for name in {n.strip() for n in names if n.strip()}:
@@ -153,7 +164,7 @@ def create_post(
     post = models.Post(
         title=data.title,
         content=data.content,
-        summary=data.summary or data.content[:150],
+        summary=_make_summary(data.summary, data.content),
         category_id=data.category_id,
         published=data.published,
         user_id=current.id,
@@ -198,7 +209,7 @@ def update_post(
         raise HTTPException(status_code=403, detail="无权修改此文章")
     post.title = data.title
     post.content = data.content
-    post.summary = data.summary or data.content[:150]
+    post.summary = _make_summary(data.summary, data.content)
     post.category_id = data.category_id
     post.published = data.published
     post.tags = _get_or_create_tags(db, data.tags)

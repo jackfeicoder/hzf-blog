@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
-import { renderMarkdown } from '../utils'
+import { bindCodeCopy, renderMarkdown } from '../utils'
 
 export default function Editor() {
   const { id } = useParams()
@@ -20,6 +20,7 @@ export default function Editor() {
   const [preview, setPreview] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const previewRef = useRef(null)
 
   useEffect(() => {
     if (!authLoading && !user) nav('/login')
@@ -46,6 +47,10 @@ export default function Editor() {
 
   const html = useMemo(() => renderMarkdown(content), [content])
 
+  useEffect(() => {
+    if (preview && previewRef.current) bindCodeCopy(previewRef.current)
+  }, [html, preview])
+
   const onSubmit = async (e) => {
     e.preventDefault()
     if (!title.trim() || !content.trim()) {
@@ -57,12 +62,14 @@ export default function Editor() {
     const payload = {
       title: title.trim(),
       content,
-      summary: summary.trim(),
+      // 摘要过长时截断，避免再触发校验；空则让后端自动生成
+      summary: summary.trim().slice(0, 2000),
       category_id: categoryId ? Number(categoryId) : null,
       tags: tags
         .split(/[,，\s]+/)
         .map((t) => t.trim())
-        .filter(Boolean),
+        .filter(Boolean)
+        .slice(0, 20),
       published,
     }
     try {
@@ -128,12 +135,18 @@ export default function Editor() {
         />
 
         {preview ? (
-          <div className="markdown-body editor-preview" dangerouslySetInnerHTML={{ __html: html }} />
+          <div
+            ref={previewRef}
+            className="markdown-body editor-preview"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
         ) : (
           <textarea
             className="md-input"
             rows={22}
-            placeholder="用 Markdown 写正文..."
+            placeholder={
+              '用 Markdown 写正文...\n\n支持：\n# 标题\n**粗体** *斜体*\n[链接](https://example.com)\n![图片说明](https://...)\n```python\nprint(\"hello\")\n```\n- 列表\n> 引用\n| 表头 | 表头 |\n| --- | --- |\n| 单元格 | 单元格 |'
+            }
             value={content}
             onChange={(e) => setContent(e.target.value)}
           />

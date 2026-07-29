@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
 import { avatarText } from '../components/Layout'
-import { formatNum, renderMarkdown, timeAgo } from '../utils'
+import { bindCodeCopy, formatNum, renderMarkdown, timeAgo } from '../utils'
 
 export default function PostPage() {
   const { id } = useParams()
@@ -17,6 +17,7 @@ export default function PostPage() {
   const [err, setErr] = useState('')
   const [following, setFollowing] = useState(false)
   const [busy, setBusy] = useState(false)
+  const mdRef = useRef(null)
 
   const load = async () => {
     const p = await api.getPost(id)
@@ -37,6 +38,20 @@ export default function PostPage() {
   }, [id, user?.id])
 
   const html = useMemo(() => renderMarkdown(post?.content || ''), [post?.content])
+
+  useEffect(() => {
+    if (!mdRef.current) return
+    bindCodeCopy(mdRef.current)
+    // 图片加载失败时显示破损态（不依赖内联 onerror，避免被 sanitize 去掉）
+    mdRef.current.querySelectorAll('img').forEach((img) => {
+      if (img.dataset.errBound) return
+      img.dataset.errBound = '1'
+      img.addEventListener('error', () => {
+        img.classList.add('is-broken')
+        if (!img.alt) img.alt = '图片加载失败'
+      })
+    })
+  }, [html])
 
   const tree = useMemo(() => {
     const tops = comments.filter((c) => !c.parent_id)
@@ -138,7 +153,11 @@ export default function PostPage() {
           ))}
         </div>
 
-        <div className="markdown-body" dangerouslySetInnerHTML={{ __html: html }} />
+        <div
+          ref={mdRef}
+          className="markdown-body"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
 
         <div className="action-bar">
           <button className={`action-btn ${post.liked ? 'on' : ''}`} onClick={onLike}>
