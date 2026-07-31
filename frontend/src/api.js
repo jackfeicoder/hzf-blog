@@ -1,8 +1,33 @@
 const TOKEN_KEY = 'blog_token'
 
-export const getToken = () => sessionStorage.getItem(TOKEN_KEY)
-export const setToken = (t) => sessionStorage.setItem(TOKEN_KEY, t)
-export const clearToken = () => sessionStorage.removeItem(TOKEN_KEY)
+// 持久化到 localStorage：关浏览器后再开仍保持登录
+// 同时清理旧的 sessionStorage，避免两处不一致
+export const getToken = () => {
+  try {
+    const t = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY)
+    if (t && !localStorage.getItem(TOKEN_KEY)) {
+      localStorage.setItem(TOKEN_KEY, t)
+      sessionStorage.removeItem(TOKEN_KEY)
+    }
+    return t
+  } catch {
+    return null
+  }
+}
+
+export const setToken = (t) => {
+  try {
+    localStorage.setItem(TOKEN_KEY, t)
+    sessionStorage.removeItem(TOKEN_KEY)
+  } catch { /* private mode etc. */ }
+}
+
+export const clearToken = () => {
+  try {
+    localStorage.removeItem(TOKEN_KEY)
+    sessionStorage.removeItem(TOKEN_KEY)
+  } catch { /* ignore */ }
+}
 
 async function request(path, { method = 'GET', body, auth = false } = {}) {
   const headers = { 'Content-Type': 'application/json' }
@@ -84,4 +109,9 @@ export const api = {
     request(`/api/users/${encodeURIComponent(username)}/follow`, { method: 'POST', auth: true }),
   userFavorites: (username, page = 1) =>
     request(`/api/users/${encodeURIComponent(username)}/favorites?page=${page}`),
+
+  // AI 问答
+  getChatProviders: () => request('/api/chat/providers'),
+  sendChat: (data) => request('/api/chat', { method: 'POST', body: data }),
 }
+

@@ -12,7 +12,7 @@ from database import get_db
 
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 ALGORITHM = "HS256"
-TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 小时
+TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 天，配合前端 localStorage 持久登录
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)

@@ -1,5 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { AuthProvider } from './AuthContext'
+import { Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import Home from './pages/Home'
 import PostPage from './pages/PostPage'
@@ -8,6 +7,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Profile from './pages/Profile'
 import Rank from './pages/Rank'
+import ChatAI from './pages/ChatAI'
 
 export default function App() {
   return (
@@ -23,6 +23,7 @@ export default function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/u/:username" element={<Profile />} />
             <Route path="/rank" element={<Rank />} />
+            <Route path="/ai" element={<ChatAI />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Layout>
