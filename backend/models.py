@@ -31,6 +31,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     nickname = Column(String(50), nullable=False, default="")
     bio = Column(String(200), default="")
+    avatar_url = Column(String(500), default="")
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 

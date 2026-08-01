@@ -113,5 +113,33 @@ export const api = {
   // AI 问答
   getChatProviders: () => request('/api/chat/providers'),
   sendChat: (data) => request('/api/chat', { method: 'POST', body: data }),
+
+  // 图片与头像上传
+  uploadImage: async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const headers = {}
+    if (getToken()) headers.Authorization = `Bearer ${getToken()}`
+    const res = await fetch('/api/upload/image', { method: 'POST', headers, body: formData })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || '图片上传失败')
+    }
+    return res.json()
+  },
+
+  uploadAvatar: async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const headers = {}
+    if (getToken()) headers.Authorization = `Bearer ${getToken()}`
+    const res = await fetch('/api/upload/avatar', { method: 'POST', headers, body: formData })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || '头像上传失败')
+    }
+    return res.json()
+  },
 }
+
 

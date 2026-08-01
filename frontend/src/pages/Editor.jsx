@@ -82,6 +82,57 @@ export default function Editor() {
     }
   }
 
+  const fileInputRef = useRef(null)
+
+  const handleFileUpload = async (file) => {
+    if (!file || !file.type.startsWith('image/')) return
+    try {
+      setBusy(true)
+      const res = await api.uploadImage(file)
+      if (res && res.url) {
+        const imgMarkdown = `\n![${file.name || '图片'}](${res.url})\n`
+        setContent((prev) => prev + imgMarkdown)
+      }
+    } catch (e) {
+      setErr(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    for (let item of items) {
+      if (item.type.indexOf('image') !== -1) {
+        const file = item.getAsFile()
+        if (file) {
+          e.preventDefault()
+          handleFileUpload(file)
+          break
+        }
+      }
+    }
+  }
+
+  const handleDrop = (e) => {
+    const files = e.dataTransfer?.files
+    if (files && files.length > 0) {
+      const file = files[0]
+      if (file.type.startsWith('image/')) {
+        e.preventDefault()
+        handleFileUpload(file)
+      }
+    }
+  }
+
+  const onFileInputChange = (e) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      handleFileUpload(file)
+    }
+  }
+
   if (authLoading) return <div className="container empty">加载中...</div>
 
   return (
@@ -90,6 +141,20 @@ export default function Editor() {
         <div className="editor-top">
           <h2>{isEdit ? '编辑文章' : '写文章'}</h2>
           <div className="editor-actions">
+            <input
+              type="file"
+              ref={fileInputRef}
+              style={{ display: 'none' }}
+              accept="image/*"
+              onChange={onFileInputChange}
+            />
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              📷 插入图片
+            </button>
             <button type="button" className="btn ghost" onClick={() => setPreview((v) => !v)}>
               {preview ? '编辑' : '预览'}
             </button>
@@ -144,8 +209,10 @@ export default function Editor() {
           <textarea
             className="md-input"
             rows={22}
+            onPaste={handlePaste}
+            onDrop={handleDrop}
             placeholder={
-              '用 Markdown 写正文...\n\n支持：\n# 标题\n**粗体** *斜体*\n[链接](https://example.com)\n![图片说明](https://...)\n```python\nprint(\"hello\")\n```\n- 列表\n> 引用\n| 表头 | 表头 |\n| --- | --- |\n| 单元格 | 单元格 |'
+              '用 Markdown 写正文... (可直接粘贴剪贴板图片或拖拽图片到此处上传)\n\n支持：\n# 标题\n**粗体** *斜体*\n[链接](https://example.com)\n![图片说明](https://...)\n```python\nprint("hello")\n```\n- 列表\n> 引用'
             }
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -155,3 +222,4 @@ export default function Editor() {
     </div>
   )
 }
+

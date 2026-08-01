@@ -6,7 +6,27 @@ export function avatarText(name = '') {
   return (name || '?').slice(0, 1).toUpperCase()
 }
 
+export function UserAvatar({ user, size = 'sm', className = '' }) {
+  const avatarUrl = user?.avatar_url
+  const name = user?.nickname || user?.username || ''
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name}
+        className={`avatar ${size} avatar-img ${className}`}
+        style={{ objectFit: 'cover' }}
+        onError={(e) => {
+          e.target.style.display = 'none'
+        }}
+      />
+    )
+  }
+  return <span className={`avatar ${size} ${className}`}>{avatarText(name)}</span>
+}
+
 const THEME_KEY = 'blog_theme'
+
 
 function getInitialTheme() {
   try {
@@ -120,7 +140,7 @@ export default function Layout({ children }) {
                   写文章
                 </Link>
                 <Link to={`/u/${user.username}`} className="user-chip">
-                  <span className="avatar sm">{avatarText(user.nickname || user.username)}</span>
+                  <UserAvatar user={user} size="sm" />
                   <span className="desktop-only">{user.nickname || user.username}</span>
                 </Link>
                 <button

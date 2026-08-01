@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
 import PostCard from '../components/PostCard'
-import { avatarText } from '../components/Layout'
+import { UserAvatar } from '../components/Layout'
 import { formatNum } from '../utils'
 
 export default function Profile() {
@@ -14,6 +14,8 @@ export default function Profile() {
   const [posts, setPosts] = useState([])
   const [total, setTotal] = useState(0)
   const [err, setErr] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const avatarInputRef = useRef(null)
 
   const loadProfile = async () => {
     const p = await api.getUser(username)
@@ -54,15 +56,60 @@ export default function Profile() {
     setProfile({ ...profile, is_following: r.active, follower_count: r.count })
   }
 
+  const onAvatarFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      setUploading(true)
+      const res = await api.uploadAvatar(file)
+      if (res && res.url) {
+        setProfile((prev) => ({ ...prev, avatar_url: res.url }))
+        window.location.reload()
+      }
+    } catch (error) {
+      alert(error.message || '头像更新失败')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   return (
     <div className="container profile-page">
       <div className="panel profile-header">
-        <span className="avatar xl">{avatarText(profile.nickname || profile.username)}</span>
+        <div className="profile-avatar-wrapper" style={{ position: 'relative', cursor: isMe ? 'pointer' : 'default' }} onClick={() => isMe && avatarInputRef.current?.click()}>
+          <UserAvatar user={profile} size="xl" />
+          {isMe && (
+            <div className="avatar-edit-overlay" style={{ position: 'absolute', bottom: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: '50%', padding: '4px 6px', fontSize: '11px' }}>
+              📷
+            </div>
+          )}
+          {isMe && (
+            <input
+              type="file"
+              ref={avatarInputRef}
+              style={{ display: 'none' }}
+              accept="image/*"
+              onChange={onAvatarFileSelect}
+            />
+          )}
+        </div>
         <div className="profile-info">
           <h1>
             {profile.nickname || profile.username}
             {profile.is_admin && <span className="badge">管理员</span>}
+            {isMe && (
+              <button
+                type="button"
+                className="btn ghost sm"
+                style={{ marginLeft: '12px', fontSize: '12px' }}
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={uploading}
+              >
+                {uploading ? '上传中...' : '更换头像'}
+              </button>
+            )}
           </h1>
+
           <div className="muted">@{profile.username}</div>
           <p className="bio">{profile.bio || '这个人很懒，还没有写简介'}</p>
           <div className="profile-stats">

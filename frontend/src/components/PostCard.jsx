@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { formatNum, timeAgo } from '../utils'
-import { avatarText } from './Layout'
+import { UserAvatar } from './Layout'
 
 export default function PostCard({ post, index = 0 }) {
   return (
@@ -10,7 +10,7 @@ export default function PostCard({ post, index = 0 }) {
     >
       <div className="post-card-meta">
         <Link to={`/u/${post.author.username}`} className="author-link">
-          <span className="avatar xs">{avatarText(post.author.nickname || post.author.username)}</span>
+          <UserAvatar user={post.author} size="xs" />
           <span>{post.author.nickname || post.author.username}</span>
         </Link>
         <span className="dot">·</span>

@@ -4,13 +4,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi.staticfiles import StaticFiles
+
 import models  # noqa: F401  确保模型注册到 Base.metadata
 from auth import hash_password
 from database import Base, SessionLocal, engine
-from routers import auth_router, comments, posts, users
+from routers import auth_router, comments, posts, users, upload
+from routers.chat import router as chat_router
 
 DEFAULT_CATEGORIES = ["后端", "前端", "移动开发", "人工智能", "数据库", "运维", "算法", "生活随笔"]
 
+# 创建 uploads 目录
+uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -49,15 +55,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers.chat import router as chat_router
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 app.include_router(auth_router.router)
 app.include_router(posts.router)
 app.include_router(comments.router)
 app.include_router(users.router)
 app.include_router(chat_router)
+app.include_router(upload.router)
 
 
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+

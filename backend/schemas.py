@@ -25,6 +25,7 @@ class UserBrief(BaseModel):
     id: int
     username: str
     nickname: str
+    avatar_url: str = ""
 
     model_config = {"from_attributes": True}
 
@@ -49,6 +50,8 @@ class UserProfile(UserOut):
 class UserUpdate(BaseModel):
     nickname: Optional[str] = Field(default=None, max_length=50)
     bio: Optional[str] = Field(default=None, max_length=200)
+    avatar_url: Optional[str] = Field(default=None, max_length=500)
+
 
 
 # ---------- 分类 ----------
