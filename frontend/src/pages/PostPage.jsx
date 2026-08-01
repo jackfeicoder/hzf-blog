@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
-import { avatarText } from '../components/Layout'
+import { UserAvatar } from '../components/Layout'
 import { bindCodeCopy, formatNum, renderMarkdown, timeAgo } from '../utils'
 
 export default function PostPage() {
@@ -17,6 +17,8 @@ export default function PostPage() {
   const [err, setErr] = useState('')
   const [following, setFollowing] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [toc, setToc] = useState([])
+  const [activeTocId, setActiveTocId] = useState('')
   const mdRef = useRef(null)
 
   const load = async () => {
@@ -42,7 +44,23 @@ export default function PostPage() {
   useEffect(() => {
     if (!mdRef.current) return
     bindCodeCopy(mdRef.current)
-    // 图片加载失败时显示破损态（不依赖内联 onerror，避免被 sanitize 去掉）
+
+    // 提取 TOC 标题大纲
+    const nodes = mdRef.current.querySelectorAll('h1, h2, h3')
+    const list = []
+    nodes.forEach((node, index) => {
+      if (!node.id) {
+        node.id = `heading-auto-${index}`
+      }
+      list.push({
+        id: node.id,
+        text: node.textContent || '',
+        level: Number(node.tagName.replace('H', '')),
+      })
+    })
+    setToc(list)
+
+    // 图片加载失败处理
     mdRef.current.querySelectorAll('img').forEach((img) => {
       if (img.dataset.errBound) return
       img.dataset.errBound = '1'
@@ -52,6 +70,24 @@ export default function PostPage() {
       })
     })
   }, [html])
+
+  // 监听滚动高亮当前 TOC 节点
+  useEffect(() => {
+    if (toc.length === 0) return
+    const onScroll = () => {
+      const scrollY = window.scrollY || 0
+      let currentId = ''
+      for (const item of toc) {
+        const el = document.getElementById(item.id)
+        if (el && el.offsetTop - 100 <= scrollY) {
+          currentId = item.id
+        }
+      }
+      if (currentId) setActiveTocId(currentId)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [toc])
 
   const tree = useMemo(() => {
     const tops = comments.filter((c) => !c.parent_id)
@@ -116,13 +152,21 @@ export default function PostPage() {
     setComments(cs)
   }
 
+  const scrollToHeading = (id) => {
+    const el = document.getElementById(id)
+    if (el) {
+      const top = el.getBoundingClientRect().top + window.scrollY - 70
+      window.scrollTo({ top, behavior: 'smooth' })
+    }
+  }
+
   return (
     <div className="container post-layout">
       <article className="post-main panel">
         <h1 className="post-title">{post.title}</h1>
         <div className="post-meta">
           <Link to={`/u/${post.author.username}`} className="author-link">
-            <span className="avatar sm">{avatarText(post.author.nickname || post.author.username)}</span>
+            <UserAvatar user={post.author} size="sm" />
             <span>{post.author.nickname || post.author.username}</span>
           </Link>
           <span className="dot">·</span>
@@ -195,7 +239,7 @@ export default function PostPage() {
               <div key={c.id} className="comment-item">
                 <div className="comment-head">
                   <Link to={`/u/${c.author.username}`} className="author-link">
-                    <span className="avatar xs">{avatarText(c.author.nickname || c.author.username)}</span>
+                    <UserAvatar user={c.author} size="xs" />
                     <strong>{c.author.nickname || c.author.username}</strong>
                   </Link>
                   <time className="muted">{timeAgo(c.created_at)}</time>
@@ -225,9 +269,7 @@ export default function PostPage() {
                       <div key={r.id} className="comment-item reply">
                         <div className="comment-head">
                           <Link to={`/u/${r.author.username}`} className="author-link">
-                            <span className="avatar xs">
-                              {avatarText(r.author.nickname || r.author.username)}
-                            </span>
+                            <UserAvatar user={r.author} size="xs" />
                             <strong>{r.author.nickname || r.author.username}</strong>
                           </Link>
                           {r.reply_to && <span className="muted">回复 @{r.reply_to}</span>}
@@ -266,7 +308,7 @@ export default function PostPage() {
       <aside className="post-side">
         <div className="panel author-card">
           <Link to={`/u/${post.author.username}`} className="author-link big">
-            <span className="avatar lg">{avatarText(post.author.nickname || post.author.username)}</span>
+            <UserAvatar user={post.author} size="lg" />
             <div>
               <div className="name">{post.author.nickname || post.author.username}</div>
               <div className="muted">@{post.author.username}</div>
@@ -281,7 +323,26 @@ export default function PostPage() {
             查看主页
           </Link>
         </div>
+
+        {toc.length > 0 && (
+          <div className="panel toc-card" style={{ marginTop: '16px' }}>
+            <h4 className="toc-title">📖 文章目录</h4>
+            <nav className="toc-nav">
+              {toc.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`toc-item level-${item.level} ${activeTocId === item.id ? 'active' : ''}`}
+                  onClick={() => scrollToHeading(item.id)}
+                >
+                  {item.text}
+                </button>
+              ))}
+            </nav>
+          </div>
+        )}
       </aside>
     </div>
   )
 }
+

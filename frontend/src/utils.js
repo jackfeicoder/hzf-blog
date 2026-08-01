@@ -159,6 +159,22 @@ renderer.table = function table(tokenOrHeader, body) {
   return `<div class="md-table-wrap"><table><thead>${tokenOrHeader}</thead><tbody>${body}</tbody></table></div>\n`
 }
 
+// 标题带有 id 便于 TOC 页面锚点跳转
+renderer.heading = function heading(tokenOrText, level, raw) {
+  let text = ''
+  let depth = level
+  if (tokenOrText && typeof tokenOrText === 'object') {
+    text = tokenOrText.text || ''
+    depth = tokenOrText.depth || level
+  } else {
+    text = tokenOrText || ''
+  }
+  const cleanText = text.replace(/<[^>]+>/g, '').trim()
+  const slug = cleanText.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-')
+  const id = `heading-${slug}`
+  return `<h${depth} id="${id}">${escapeHtml(cleanText)}</h${depth}>\n`
+}
+
 marked.setOptions({
   gfm: true,
   breaks: true,
@@ -179,9 +195,11 @@ const PURIFY_CONFIG = {
     'referrerpolicy',
     'align',
     'data-copy',
+    'id',
   ],
   ALLOW_DATA_ATTR: true,
 }
+
 
 export function renderMarkdown(md = '') {
   const raw = marked.parse(String(md || ''), { async: false })
