@@ -52,13 +52,27 @@ def get_client_ip(request: Request) -> str:
 
 
 def record_visit(request: Request, db: Session, user: Optional[models.User] = None, path: str = None):
-    """记录访问日志辅助函数"""
+    """记录访问日志（带 30 秒防刷 + 7 天自动滚动清理）"""
     try:
         ip = get_client_ip(request)
         target_path = path or request.url.path
         user_agent = request.headers.get("User-Agent", "")[:500]
 
-        # 过滤连刷，避免同一个 IP 1 秒内大量并发打爆日志
+        # 1. 30 秒内同一 IP + 路径防刷拦截
+        recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
+        recent_exists = (
+            db.query(models.VisitLog.id)
+            .filter(
+                models.VisitLog.ip == ip,
+                models.VisitLog.path == target_path[:200],
+                models.VisitLog.created_at >= recent_cutoff,
+            )
+            .first()
+        )
+        if recent_exists:
+            return
+
+        # 2. 写入新访问日志
         log = models.VisitLog(
             ip=ip,
             user_id=user.id if user else None,
@@ -66,9 +80,17 @@ def record_visit(request: Request, db: Session, user: Optional[models.User] = No
             user_agent=user_agent,
         )
         db.add(log)
+
+        # 3. 自动滚动清理：删除 7 天前的旧日志，保持数据库轻量化
+        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        db.query(models.VisitLog).filter(models.VisitLog.created_at < seven_days_ago).delete(
+            synchronize_session=False
+        )
+
         db.commit()
     except Exception:
         db.rollback()
+
 
 
 @router.get("", response_model=VisitorsSummaryOut)
