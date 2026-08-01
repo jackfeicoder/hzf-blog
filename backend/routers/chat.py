@@ -9,8 +9,12 @@ from schemas_chat import ChatIn, ChatOut
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
+# 默认全员免费 API Key (商汤 SenseNova)
+DEFAULT_FREE_KEY = "sk-lQYXt2cgWUprdhd4zksTF3FH9FrEOC2H"
+
 # 预设提供商 → 默认 Base URL（OpenAI 兼容 /v1）
 PROVIDER_BASE_URLS: dict[str, str] = {
+    "sensenova": "https://api.sensenova.cn/compatible-mode/v1",
     "deepseek": "https://api.deepseek.com/v1",
     "grok": "https://api.x.ai/v1",
     "openai": "https://api.openai.com/v1",
@@ -18,6 +22,7 @@ PROVIDER_BASE_URLS: dict[str, str] = {
 }
 
 DEFAULT_MODELS: dict[str, str] = {
+    "sensenova": "Nova-5-Pro",
     "deepseek": "deepseek-chat",
     "grok": "grok-2-latest",
     "openai": "gpt-4o-mini",
@@ -26,7 +31,7 @@ DEFAULT_MODELS: dict[str, str] = {
 
 
 def _resolve_base_url(provider: str, base_url: str | None) -> str:
-    p = (provider or "custom").lower().strip()
+    p = (provider or "sensenova").lower().strip()
     if base_url:
         url = base_url.rstrip("/")
         # 允许用户填 http://127.0.0.1:3000 或 .../v1
@@ -39,7 +44,7 @@ def _resolve_base_url(provider: str, base_url: str | None) -> str:
     if not default:
         raise HTTPException(
             status_code=400,
-            detail=f"未知提供商: {provider}，可选 deepseek / grok / openai / custom",
+            detail=f"未知提供商: {provider}，可选 sensenova / deepseek / grok / openai / custom",
         )
     return default
 
@@ -49,6 +54,13 @@ def list_providers():
     """前端下拉菜单用的预设列表。"""
     return {
         "providers": [
+            {
+                "id": "sensenova",
+                "name": "商汤日日新 (SenseNova · 默认免费)",
+                "base_url": PROVIDER_BASE_URLS["sensenova"],
+                "models": ["Nova-5-Pro", "Nova-5-Flash", "SenseChat-5"],
+                "is_free": True,
+            },
             {
                 "id": "deepseek",
                 "name": "DeepSeek",
@@ -81,8 +93,16 @@ def list_providers():
 @router.post("/chat", response_model=ChatOut)
 async def chat(data: ChatIn):
     base = _resolve_base_url(data.provider, data.base_url)
-    model = data.model or DEFAULT_MODELS.get(data.provider.lower(), "gpt-4o-mini")
+    model = data.model or DEFAULT_MODELS.get(data.provider.lower(), "Nova-5-Pro")
     url = f"{base}/chat/completions"
+
+    # API Key 降级策略：如果用户没传，且用的是 sensenova，自动填充免费公用 Key
+    api_key = data.api_key.strip() if data.api_key else ""
+    if not api_key:
+        if data.provider.lower() == "sensenova":
+            api_key = DEFAULT_FREE_KEY
+        else:
+            raise HTTPException(status_code=400, detail="请填写该模型提供商的 API Key")
 
     payload = {
         "model": model,
@@ -91,9 +111,10 @@ async def chat(data: ChatIn):
         "stream": False,
     }
     headers = {
-        "Authorization": f"Bearer {data.api_key}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+
 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=15.0)) as client:

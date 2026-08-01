@@ -1542,11 +1542,12 @@ html.dark .alert {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 .chat-config-header h2 {
   margin: 0;
   font-size: 20px;
+  font-weight: 700;
 }
 .chat-config-tip {
   font-size: 12px;
@@ -1555,8 +1556,82 @@ html.dark .alert {
 
 .chat-config-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
+}
+
+.chat-config-grid .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-config-grid label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+}
+
+.free-badge {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 6px;
+  line-height: 1.3;
+}
+
+/* 高颜值 Form Select 下拉菜单与控制项 */
+.form-control,
+select.form-control {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background-color: var(--input-bg);
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: all 0.2s var(--ease);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  width: 100%;
+}
+
+select.form-control {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23fc5531'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2.5' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 16px 16px;
+  padding-right: 38px;
+  cursor: pointer;
+}
+
+.form-control:hover,
+select.form-control:hover {
+  border-color: var(--primary);
+  background-color: var(--panel);
+}
+
+.form-control:focus,
+select.form-control:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(252, 85, 49, 0.16);
+  background-color: var(--panel);
+}
+
+select.form-control option {
+  background-color: var(--panel);
+  color: var(--text);
+  padding: 10px 14px;
+  font-size: 14px;
 }
 
 .chat-config-grid .full-width {
@@ -1565,10 +1640,13 @@ html.dark .alert {
 
 .key-input-wrapper {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 .key-toggle-btn {
   flex-shrink: 0;
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 10px;
 }
 
 .error-alert {
@@ -1580,6 +1658,7 @@ html.dark .alert {
   border-radius: 8px;
   font-size: 13px;
 }
+
 
 .chat-box-card {
   display: flex;

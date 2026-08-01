@@ -7,8 +7,8 @@ const STORAGE_KEY_PREFIX = 'blog_ai_'
 
 export default function ChatAI() {
   const [providers, setProviders] = useState([])
-  const [provider, setProvider] = useState('deepseek')
-  const [model, setModel] = useState('deepseek-chat')
+  const [provider, setProvider] = useState('sensenova')
+  const [model, setModel] = useState('Nova-5-Pro')
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [showKey, setShowKey] = useState(false)
@@ -17,7 +17,7 @@ export default function ChatAI() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: '你好！我是 AI 智能助手。请输入您的 API Key 并选择服务模型，即可与我聊天或生成博客文章灵感。',
+      content: '你好！我是 AI 智能助手。目前默认开启**商汤日日新 (SenseNova)** 免费模型，无需填 Key 即可直接聊天！您也可以随时切换至 DeepSeek 或自填 Key。',
     },
   ])
   const [input, setInput] = useState('')
@@ -41,8 +41,8 @@ export default function ChatAI() {
 
     // 读取本地保存的 Key 和配置
     const savedKey = localStorage.getItem(STORAGE_KEY_PREFIX + 'apikey') || ''
-    const savedProvider = localStorage.getItem(STORAGE_KEY_PREFIX + 'provider') || 'deepseek'
-    const savedModel = localStorage.getItem(STORAGE_KEY_PREFIX + 'model') || 'deepseek-chat'
+    const savedProvider = localStorage.getItem(STORAGE_KEY_PREFIX + 'provider') || 'sensenova'
+    const savedModel = localStorage.getItem(STORAGE_KEY_PREFIX + 'model') || 'Nova-5-Pro'
     const savedBaseUrl = localStorage.getItem(STORAGE_KEY_PREFIX + 'baseurl') || ''
 
     if (savedKey) setApiKey(savedKey)
@@ -91,11 +91,12 @@ export default function ChatAI() {
   const handleSend = async (overrideText) => {
     const textToSend = overrideText || input
     if (!textToSend.trim()) return
-    if (!apiKey.trim()) {
-      setErrorMsg('请先填写 API Key')
+    if (!apiKey.trim() && provider !== 'sensenova') {
+      setErrorMsg('非免费模型请先填写 API Key')
       return
     }
     setErrorMsg('')
+
 
     const newMessages = [...messages, { role: 'user', content: textToSend }]
     setMessages(newMessages)
@@ -189,15 +190,16 @@ export default function ChatAI() {
           </div>
 
           <div className="form-group">
-            <label>API Key</label>
+            <label>API Key {provider === 'sensenova' && <span className="free-badge">🎁 默认全员免费</span>}</label>
             <div className="key-input-wrapper">
               <input
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
                 onChange={(e) => handleKeyChange(e.target.value)}
-                placeholder="输入 sk-xxxx"
+                placeholder={provider === 'sensenova' ? '留空即使用全站免费 Key (可自填)' : '输入 sk-xxxx'}
                 className="form-control"
               />
+
               <button
                 type="button"
                 className="btn btn-secondary btn-sm key-toggle-btn"
