@@ -17,9 +17,10 @@ export default function ChatAI() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: '你好！我是 AI 智能助手。目前默认开启**商汤日日新 (SenseNova)** 免费大模型，包含 `sensenova-6.7-flash-lite`、`deepseek-v4-flash` 和 `glm-5.2` 三款模型，无需填 Key 即可零门槛畅聊！',
+      content: '你好！我是 AI 智能助手。目前默认开启**商汤日日新 (SenseNova)** 免费大模型，包含 `sensenova-6.7-flash-lite`、`deepseek-v4-flash` 和 `sensenova-u1-fast` 三款官方模型，无需填 Key 即可零门槛畅聊！',
     },
   ])
+
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')

@@ -58,7 +58,7 @@ def list_providers():
                 "id": "sensenova",
                 "name": "商汤日日新 (SenseNova · 默认免费)",
                 "base_url": PROVIDER_BASE_URLS["sensenova"],
-                "models": ["sensenova-6.7-flash-lite", "deepseek-v4-flash", "glm-5.2"],
+                "models": ["sensenova-6.7-flash-lite", "deepseek-v4-flash", "sensenova-u1-fast"],
                 "is_free": True,
             },
             {
@@ -67,6 +67,7 @@ def list_providers():
                 "base_url": PROVIDER_BASE_URLS["deepseek"],
                 "models": ["deepseek-chat", "deepseek-reasoner"],
             },
+
 
             {
                 "id": "grok",
