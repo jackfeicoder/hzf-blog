@@ -35,10 +35,9 @@ async function request(path, { method = 'GET', body, auth = false } = {}) {
     const token = getToken()
     if (token) headers.Authorization = `Bearer ${token}`
   }
-  const baseUrl = import.meta.env.VITE_API_BASE || ''
+  const baseUrl = import.meta.env.VITE_API_BASE || 'http://47.94.93.71:28443'
   const url = path.startsWith('http') ? path : baseUrl + path
   const res = await fetch(url, {
-
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
