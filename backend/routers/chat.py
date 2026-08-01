@@ -232,5 +232,14 @@ async def chat_stream(data: ChatIn):
         except Exception as e:
             yield f"data: {json.dumps({'error': f'流传输连接异常: {str(e)}'}, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
 

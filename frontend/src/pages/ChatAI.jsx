@@ -182,10 +182,18 @@ export default function ChatAI() {
       }
     } catch (err) {
       setErrorMsg(err.message || 'AI 响应失败，请检查 API Key 和网络配置')
+      setMessages((prev) => {
+        const last = prev[prev.length - 1]
+        if (last && last.role === 'assistant' && !last.content) {
+          return prev.slice(0, -1)
+        }
+        return prev
+      })
     } finally {
       setLoading(false)
     }
   }
+
 
 
   const handleKeyDown = (e) => {
@@ -304,23 +312,22 @@ export default function ChatAI() {
           {messages.map((m, idx) => (
             <div key={idx} className={`chat-message-row ${m.role}`}>
               <div className="chat-avatar">{m.role === 'user' ? '👤' : '🤖'}</div>
-              <div className="chat-bubble">
-                <div
-                  className="markdown-body"
-                  dangerouslySetInnerHTML={renderMarkdown(m.content)}
-                />
-              </div>
+              {m.role === 'assistant' && !m.content ? (
+                <div className="chat-bubble loading-bubble">
+                  <span className="dot-pulse">AI 正在思考中...</span>
+                </div>
+              ) : (
+                <div className="chat-bubble">
+                  <div
+                    className="markdown-body"
+                    dangerouslySetInnerHTML={renderMarkdown(m.content)}
+                  />
+                </div>
+              )}
             </div>
           ))}
-          {loading && (
-            <div className="chat-message-row assistant">
-              <div className="chat-avatar">🤖</div>
-              <div className="chat-bubble loading-bubble">
-                <span className="dot-pulse">AI 正在思考中...</span>
-              </div>
-            </div>
-          )}
           <div ref={chatEndRef} />
+
         </div>
 
         {/* 快捷 Prompt */}
