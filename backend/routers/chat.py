@@ -14,7 +14,7 @@ DEFAULT_FREE_KEY = "sk-lQYXt2cgWUprdhd4zksTF3FH9FrEOC2H"
 
 # 预设提供商 → 默认 Base URL（OpenAI 兼容 /v1）
 PROVIDER_BASE_URLS: dict[str, str] = {
-    "sensenova": "https://api.sensenova.cn/compatible-mode/v1",
+    "sensenova": "https://token.sensenova.cn/v1",
     "deepseek": "https://api.deepseek.com/v1",
     "grok": "https://api.x.ai/v1",
     "openai": "https://api.openai.com/v1",
@@ -22,7 +22,7 @@ PROVIDER_BASE_URLS: dict[str, str] = {
 }
 
 DEFAULT_MODELS: dict[str, str] = {
-    "sensenova": "Nova-5-Pro",
+    "sensenova": "sensenova-6.7-flash-lite",
     "deepseek": "deepseek-chat",
     "grok": "grok-2-latest",
     "openai": "gpt-4o-mini",
@@ -58,7 +58,7 @@ def list_providers():
                 "id": "sensenova",
                 "name": "商汤日日新 (SenseNova · 默认免费)",
                 "base_url": PROVIDER_BASE_URLS["sensenova"],
-                "models": ["Nova-5-Pro", "Nova-5-Flash", "SenseChat-5"],
+                "models": ["sensenova-6.7-flash-lite", "deepseek-v4-flash", "glm-5.2"],
                 "is_free": True,
             },
             {
@@ -67,6 +67,7 @@ def list_providers():
                 "base_url": PROVIDER_BASE_URLS["deepseek"],
                 "models": ["deepseek-chat", "deepseek-reasoner"],
             },
+
             {
                 "id": "grok",
                 "name": "Grok (xAI)",

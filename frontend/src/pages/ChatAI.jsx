@@ -8,7 +8,7 @@ const STORAGE_KEY_PREFIX = 'blog_ai_'
 export default function ChatAI() {
   const [providers, setProviders] = useState([])
   const [provider, setProvider] = useState('sensenova')
-  const [model, setModel] = useState('Nova-5-Pro')
+  const [model, setModel] = useState('sensenova-6.7-flash-lite')
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [showKey, setShowKey] = useState(false)
@@ -17,7 +17,7 @@ export default function ChatAI() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: '你好！我是 AI 智能助手。目前默认开启**商汤日日新 (SenseNova)** 免费模型，无需填 Key 即可直接聊天！您也可以随时切换至 DeepSeek 或自填 Key。',
+      content: '你好！我是 AI 智能助手。目前默认开启**商汤日日新 (SenseNova)** 免费大模型，包含 `sensenova-6.7-flash-lite`、`deepseek-v4-flash` 和 `glm-5.2` 三款模型，无需填 Key 即可零门槛畅聊！',
     },
   ])
   const [input, setInput] = useState('')
@@ -42,7 +42,8 @@ export default function ChatAI() {
     // 读取本地保存的 Key 和配置
     const savedKey = localStorage.getItem(STORAGE_KEY_PREFIX + 'apikey') || ''
     const savedProvider = localStorage.getItem(STORAGE_KEY_PREFIX + 'provider') || 'sensenova'
-    const savedModel = localStorage.getItem(STORAGE_KEY_PREFIX + 'model') || 'Nova-5-Pro'
+    const savedModel = localStorage.getItem(STORAGE_KEY_PREFIX + 'model') || 'sensenova-6.7-flash-lite'
+
     const savedBaseUrl = localStorage.getItem(STORAGE_KEY_PREFIX + 'baseurl') || ''
 
     if (savedKey) setApiKey(savedKey)
