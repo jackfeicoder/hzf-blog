@@ -33,5 +33,3 @@ Thumbs.db
 *.log
 *.tar.gz
 .npm-cache/
-.wrangler/
-

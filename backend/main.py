@@ -49,12 +49,11 @@ app = FastAPI(title="Personal Blog API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=".*",
+    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
