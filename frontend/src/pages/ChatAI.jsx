@@ -42,16 +42,22 @@ export default function ChatAI() {
       })
 
     // 读取本地保存的 Key 和配置
-    const savedKey = localStorage.getItem(STORAGE_KEY_PREFIX + 'apikey') || ''
     const savedProvider = localStorage.getItem(STORAGE_KEY_PREFIX + 'provider') || 'sensenova'
     const savedModel = localStorage.getItem(STORAGE_KEY_PREFIX + 'model') || 'sensenova-6.7-flash-lite'
-
     const savedBaseUrl = localStorage.getItem(STORAGE_KEY_PREFIX + 'baseurl') || ''
 
-    if (savedKey && savedKey !== 'sk-xxxx') setApiKey(savedKey)
     if (savedProvider) setProvider(savedProvider)
     if (savedModel) setModel(savedModel)
     if (savedBaseUrl) setBaseUrl(savedBaseUrl)
+
+    // 如果当前为商汤免费模式，默认清空旧 key 确保直接走后端公用 key
+    if (savedProvider === 'sensenova') {
+      setApiKey('')
+      localStorage.removeItem(STORAGE_KEY_PREFIX + 'apikey')
+    } else {
+      const savedKey = localStorage.getItem(STORAGE_KEY_PREFIX + 'apikey') || ''
+      if (savedKey && savedKey !== 'sk-xxxx') setApiKey(savedKey)
+    }
   }, [])
 
   // 切换 Provider 时自动切换默认 Model
@@ -59,6 +65,11 @@ export default function ChatAI() {
     const pId = e.target.value
     setProvider(pId)
     localStorage.setItem(STORAGE_KEY_PREFIX + 'provider', pId)
+
+    if (pId === 'sensenova') {
+      setApiKey('')
+      localStorage.removeItem(STORAGE_KEY_PREFIX + 'apikey')
+    }
 
     const found = providers.find((p) => p.id === pId)
     if (found && found.models && found.models.length > 0) {
@@ -69,6 +80,7 @@ export default function ChatAI() {
       setModel('')
     }
   }
+
 
   const handleKeyChange = (val) => {
     setApiKey(val)

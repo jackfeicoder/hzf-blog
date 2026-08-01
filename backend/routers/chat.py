@@ -99,13 +99,14 @@ async def chat(data: ChatIn):
     model = data.model or DEFAULT_MODELS.get(data.provider.lower(), "Nova-5-Pro")
     url = f"{base}/chat/completions"
 
-    # API Key 降级策略：如果用户没传、传了空串、或传了默认占位符 sk-xxxx，自动填充免费公用 Key
+    # API Key 降级策略：如果是 SenseNova 且未传有效 Key，强制自动填充免费公用 Key
     api_key = data.api_key.strip() if data.api_key else ""
-    if not api_key or api_key in ["sk-xxxx", "undefined", "null"]:
-        if data.provider.lower() == "sensenova":
+    if data.provider.lower() == "sensenova":
+        if not api_key or not api_key.startswith("sk-lQYXt"):
             api_key = DEFAULT_FREE_KEY
-        else:
-            raise HTTPException(status_code=400, detail="请填写该模型提供商的 API Key")
+    elif not api_key:
+        raise HTTPException(status_code=400, detail="请填写该模型提供商的 API Key")
+
 
 
     payload = {
