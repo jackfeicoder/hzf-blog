@@ -1,6 +1,8 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from routers.visitors import record_visit
+
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -179,6 +181,7 @@ def create_post(
 @router.get("/posts/{post_id}", response_model=schemas.PostDetail)
 def get_post(
     post_id: int,
+    request: Request,
     inc_view: bool = True,
     db: Session = Depends(get_db),
     user: Optional[models.User] = Depends(get_current_user_optional),
@@ -190,9 +193,11 @@ def get_post(
         raise HTTPException(status_code=404, detail="文章不存在")
     if inc_view:
         post.views += 1
+        record_visit(request, db, user, path=f"/post/{post_id}")
         db.commit()
         db.refresh(post)
     return _post_detail(post, db, user)
+
 
 
 @router.put("/posts/{post_id}", response_model=schemas.PostDetail)

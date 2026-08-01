@@ -9,6 +9,7 @@ import Register from './pages/Register'
 import Profile from './pages/Profile'
 import Rank from './pages/Rank'
 import ChatAI from './pages/ChatAI'
+import Visitors from './pages/Visitors'
 
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
             <Route path="/u/:username" element={<Profile />} />
             <Route path="/rank" element={<Rank />} />
             <Route path="/ai" element={<ChatAI />} />
+            <Route path="/visitors" element={<Visitors />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Layout>
@@ -33,3 +35,4 @@ export default function App() {
     </AuthProvider>
   )
 }
+

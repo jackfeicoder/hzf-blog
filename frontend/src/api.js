@@ -144,7 +144,11 @@ export const api = {
   // 消息通知
   getNotifications: () => request('/api/notifications', { auth: true }),
   markNotificationsRead: () => request('/api/notifications/read-all', { method: 'POST', auth: true }),
+
+  // 访客统计
+  getVisitors: () => request('/api/visitors'),
 }
+
 
 
 

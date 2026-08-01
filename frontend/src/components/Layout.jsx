@@ -42,8 +42,10 @@ const navItems = [
   { to: '/rank', label: '排行', icon: '🔥' },
   { to: '/write', label: '写作', icon: '✍️', auth: true },
   { to: '/ai', label: '问 AI', icon: '🤖' },
+  { to: '/visitors', label: '访客', icon: '👀' },
   { to: 'https://imagefree.net', label: '画图', icon: '🎨', external: true },
 ]
+
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth()

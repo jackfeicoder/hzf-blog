@@ -140,3 +140,17 @@ class Notification(Base):
     sender = relationship("User", foreign_keys=[sender_id], lazy="joined")
     post = relationship("Post", foreign_keys=[post_id], lazy="joined")
 
+
+class VisitLog(Base):
+    __tablename__ = "visit_logs"
+
+    id = Column(Integer, primary_key=True)
+    ip = Column(String(50), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    path = Column(String(200), default="/")
+    user_agent = Column(String(500), default="")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    user = relationship("User", lazy="joined")
+
+
