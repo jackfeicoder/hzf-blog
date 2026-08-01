@@ -1746,4 +1746,106 @@ html.dark .alert {
   background: var(--primary-soft);
 }
 
+/* ---- Notifications (站内消息) ---- */
+.noti-bell-btn {
+  position: relative;
+  font-size: 18px;
+}
+.noti-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  line-height: 1.2;
+}
+
+.noti-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 12px);
+  width: 320px;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  padding: 0;
+  overflow: hidden;
+}
+
+.noti-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+  font-size: 14px;
+  background: var(--panel);
+}
+
+.btn-link {
+  background: transparent;
+  border: none;
+  color: var(--primary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+.noti-list {
+  overflow-y: auto;
+  max-height: 350px;
+  display: flex;
+  flex-direction: column;
+}
+
+.noti-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.noti-item.unread {
+  background: var(--primary-soft);
+}
+.noti-item:last-child {
+  border-bottom: none;
+}
+
+.noti-content {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.noti-user {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.noti-post-title {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.noti-text {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--chip-bg);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+
 

@@ -47,9 +47,29 @@ def create_comment(
     )
     post.comment_count += 1
     db.add(comment)
+
+    # 触发站内通知：给文章作者和评论被回复者
+    target_user_id = post.user_id
+    if data.parent_id:
+        parent_comment = db.get(models.Comment, data.parent_id)
+        if parent_comment and parent_comment.user_id != current.id:
+            target_user_id = parent_comment.user_id
+
+    if target_user_id != current.id:
+        db.add(
+            models.Notification(
+                user_id=target_user_id,
+                sender_id=current.id,
+                type="comment",
+                post_id=post_id,
+                content=data.content[:100],
+            )
+        )
+
     db.commit()
     db.refresh(comment)
     return comment
+
 
 
 @router.delete("/comments/{comment_id}")

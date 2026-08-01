@@ -234,6 +234,19 @@ def delete_post(
     return {"ok": True}
 
 
+def _notify(db: Session, user_id: int, sender_id: int, type_str: str, post_id: int = None, content: str = ""):
+    if user_id == sender_id:
+        return
+    noti = models.Notification(
+        user_id=user_id,
+        sender_id=sender_id,
+        type=type_str,
+        post_id=post_id,
+        content=content,
+    )
+    db.add(noti)
+
+
 # ---------- 点赞 / 收藏 ----------
 def _toggle(db: Session, model, user_id: int, post: models.Post, counter: str) -> schemas.ToggleOut:
     row = db.query(model).filter_by(user_id=user_id, post_id=post.id).first()
@@ -245,8 +258,11 @@ def _toggle(db: Session, model, user_id: int, post: models.Post, counter: str) -
         db.add(model(user_id=user_id, post_id=post.id))
         setattr(post, counter, getattr(post, counter) + 1)
         active = True
+        t_str = "like" if model == models.Like else "favorite"
+        _notify(db, user_id=post.user_id, sender_id=user_id, type_str=t_str, post_id=post.id)
     db.commit()
     return schemas.ToggleOut(active=active, count=getattr(post, counter))
+
 
 
 @router.post("/posts/{post_id}/like", response_model=schemas.ToggleOut)

@@ -140,6 +140,11 @@ export const api = {
     }
     return res.json()
   },
+
+  // 消息通知
+  getNotifications: () => request('/api/notifications', { auth: true }),
+  markNotificationsRead: () => request('/api/notifications/read-all', { method: 'POST', auth: true }),
 }
+
 
 

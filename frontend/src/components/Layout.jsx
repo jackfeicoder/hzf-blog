@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
+import { api } from '../api'
 
 export function avatarText(name = '') {
   return (name || '?').slice(0, 1).toUpperCase()
@@ -26,7 +27,6 @@ export function UserAvatar({ user, size = 'sm', className = '' }) {
 }
 
 const THEME_KEY = 'blog_theme'
-
 
 function getInitialTheme() {
   try {
@@ -55,6 +55,34 @@ export default function Layout({ children }) {
   const [progress, setProgress] = useState(0)
   const [showTop, setShowTop] = useState(false)
 
+  // 站内通知状态
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notifications, setNotifications] = useState([])
+  const [showNoti, setShowNoti] = useState(false)
+
+  const fetchNotifications = async () => {
+    if (!user) return
+    try {
+      const res = await api.getNotifications()
+      if (res) {
+        setNotifications(res.items || [])
+        setUnreadCount(res.unread_count || 0)
+      }
+    } catch { /* ignore */ }
+  }
+
+  useEffect(() => {
+    if (user) fetchNotifications()
+  }, [user, location.pathname])
+
+  const onMarkRead = async () => {
+    try {
+      await api.markNotificationsRead()
+      setUnreadCount(0)
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
+    } catch { /* ignore */ }
+  }
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
     try {
@@ -64,6 +92,7 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     setMenuOpen(false)
+    setShowNoti(false)
   }, [location.pathname, location.search])
 
   useEffect(() => {
@@ -134,6 +163,57 @@ export default function Layout({ children }) {
               {theme === 'dark' ? '☀️' : '🌙'}
             </button>
 
+            {user && (
+              <div className="noti-wrapper" style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  className="icon-btn noti-bell-btn"
+                  onClick={() => setShowNoti(!showNoti)}
+                  title="站内消息通知"
+                >
+                  🔔
+                  {unreadCount > 0 && <span className="noti-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+                </button>
+
+                {showNoti && (
+                  <div className="panel noti-popover">
+                    <div className="noti-head">
+                      <span>站内消息</span>
+                      {unreadCount > 0 && (
+                        <button type="button" className="btn-link" onClick={onMarkRead}>
+                          全部标为已读
+                        </button>
+                      )}
+                    </div>
+                    <div className="noti-list">
+                      {notifications.length === 0 ? (
+                        <div className="empty sm">暂无系统通知</div>
+                      ) : (
+                        notifications.map((n) => (
+                          <div key={n.id} className={`noti-item ${n.is_read ? 'read' : 'unread'}`}>
+                            <UserAvatar user={n.sender} size="xs" />
+                            <div className="noti-content">
+                              <span className="noti-user">{n.sender?.nickname || n.sender?.username || '系统'}</span>
+                              {n.type === 'like' && ' 点赞了你的文章'}
+                              {n.type === 'favorite' && ' 收藏了你的文章'}
+                              {n.type === 'comment' && ' 评论了你的文章'}
+                              {n.type === 'follow' && ' 关注了你'}
+                              {n.post && (
+                                <Link to={`/post/${n.post.id}`} className="noti-post-title" onClick={() => setShowNoti(false)}>
+                                  《{n.post.title}》
+                                </Link>
+                              )}
+                              {n.content && <p className="noti-text">{n.content}</p>}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {user ? (
               <>
                 <Link to="/write" className="btn primary sm desktop-only write-btn">
@@ -167,6 +247,7 @@ export default function Layout({ children }) {
           </div>
         </div>
       </header>
+
 
       <div
         className={`drawer-backdrop ${menuOpen ? 'open' : ''}`}

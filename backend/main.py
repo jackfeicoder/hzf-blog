@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 import models  # noqa: F401  确保模型注册到 Base.metadata
 from auth import hash_password
 from database import Base, SessionLocal, engine
-from routers import auth_router, comments, posts, users, upload
+from routers import auth_router, comments, posts, users, upload, notifications
 from routers.chat import router as chat_router
 
 DEFAULT_CATEGORIES = ["后端", "前端", "移动开发", "人工智能", "数据库", "运维", "算法", "生活随笔"]
@@ -63,6 +63,8 @@ app.include_router(comments.router)
 app.include_router(users.router)
 app.include_router(chat_router)
 app.include_router(upload.router)
+app.include_router(notifications.router)
+
 
 
 @app.get("/api/health")

@@ -122,3 +122,21 @@ class Follow(Base):
     follower_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     followed_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    type = Column(String(50), nullable=False)  # 'like', 'favorite', 'comment', 'follow'
+    post_id = Column(Integer, ForeignKey("posts.id", ondelete="SET NULL"), nullable=True)
+    content = Column(String(500), default="")
+    is_read = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+    sender = relationship("User", foreign_keys=[sender_id], lazy="joined")
+    post = relationship("Post", foreign_keys=[post_id], lazy="joined")
+
