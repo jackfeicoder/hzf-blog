@@ -58,9 +58,10 @@ def list_providers():
                 "id": "sensenova",
                 "name": "商汤日日新 (SenseNova · 默认免费)",
                 "base_url": PROVIDER_BASE_URLS["sensenova"],
-                "models": ["sensenova-6.7-flash-lite", "deepseek-v4-flash", "sensenova-u1-fast"],
+                "models": ["sensenova-6.7-flash-lite", "deepseek-v4-flash"],
                 "is_free": True,
             },
+
             {
                 "id": "deepseek",
                 "name": "DeepSeek",
