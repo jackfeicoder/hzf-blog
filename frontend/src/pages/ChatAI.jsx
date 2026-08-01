@@ -46,7 +46,7 @@ export default function ChatAI() {
 
     const savedBaseUrl = localStorage.getItem(STORAGE_KEY_PREFIX + 'baseurl') || ''
 
-    if (savedKey) setApiKey(savedKey)
+    if (savedKey && savedKey !== 'sk-xxxx') setApiKey(savedKey)
     if (savedProvider) setProvider(savedProvider)
     if (savedModel) setModel(savedModel)
     if (savedBaseUrl) setBaseUrl(savedBaseUrl)
@@ -201,6 +201,16 @@ export default function ChatAI() {
                 className="form-control"
               />
 
+              {apiKey && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm key-toggle-btn"
+                  onClick={() => handleKeyChange('')}
+                  title="清空并使用全站免费 Key"
+                >
+                  清空Key
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-secondary btn-sm key-toggle-btn"
@@ -208,6 +218,7 @@ export default function ChatAI() {
               >
                 {showKey ? '隐藏' : '显示'}
               </button>
+
             </div>
           </div>
 
