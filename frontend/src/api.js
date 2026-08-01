@@ -147,7 +147,16 @@ export const api = {
 
   // 访客统计
   getVisitors: () => request('/api/visitors'),
+
+  // AI 聊天流式接口
+  sendChatStream: (data) =>
+    fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
 }
+
 
 
 

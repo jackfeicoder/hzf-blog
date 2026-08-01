@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import httpx
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from schemas_chat import ChatIn, ChatOut
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
 
 # 默认全员免费 API Key (商汤 SenseNova)
 DEFAULT_FREE_KEY = "sk-lQYXt2cgWUprdhd4zksTF3FH9FrEOC2H"
@@ -170,3 +173,64 @@ async def chat(data: ChatIn):
         provider=data.provider,
         usage=usage if isinstance(usage, dict) else None,
     )
+
+
+@router.post("/chat/stream")
+async def chat_stream(data: ChatIn):
+    """OpenAI 兼容 SSE 流式聊天处理接口。"""
+    base = _resolve_base_url(data.provider, data.base_url)
+    model = data.model or DEFAULT_MODELS.get(data.provider.lower(), "sensenova-6.7-flash-lite")
+    url = f"{base}/chat/completions"
+
+    api_key = data.api_key.strip() if data.api_key else ""
+    if data.provider.lower() == "sensenova":
+        if not api_key or not api_key.startswith("sk-lQYXt"):
+            api_key = DEFAULT_FREE_KEY
+    elif not api_key:
+        raise HTTPException(status_code=400, detail="请填写该模型提供商的 API Key")
+
+    payload = {
+        "model": model,
+        "messages": [{"role": m.role, "content": m.content} for m in data.messages],
+        "temperature": data.temperature,
+        "stream": True,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    async def event_generator():
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=15.0)) as client:
+                async with client.stream("POST", url, json=payload, headers=headers) as response:
+                    if response.status_code >= 400:
+                        body = await response.aread()
+                        err_msg = body.decode("utf-8", errors="ignore")[:300]
+                        yield f"data: {json.dumps({'error': f'模型服务返回错误 ({response.status_code}): {err_msg}'}, ensure_ascii=False)}\n\n"
+                        return
+
+                    async for line in response.aiter_lines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        if line.startswith("data: "):
+                            data_str = line[6:].strip()
+                            if data_str == "[DONE]":
+                                yield "data: [DONE]\n\n"
+                                break
+                            try:
+                                chunk = json.loads(data_str)
+                                choices = chunk.get("choices", [])
+                                if choices:
+                                    delta = choices[0].get("delta", {})
+                                    content = delta.get("content") or delta.get("text") or ""
+                                    if content:
+                                        yield f"data: {json.dumps({'content': content}, ensure_ascii=False)}\n\n"
+                            except Exception:
+                                pass
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'流传输连接异常: {str(e)}'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+

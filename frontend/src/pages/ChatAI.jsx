@@ -102,7 +102,7 @@ export default function ChatAI() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  // 发送消息
+  // 发送消息（SSE 流式实时打印）
   const handleSend = async (overrideText) => {
     const textToSend = overrideText || input
     if (!textToSend.trim()) return
@@ -112,19 +112,21 @@ export default function ChatAI() {
     }
     setErrorMsg('')
 
-
-    const newMessages = [...messages, { role: 'user', content: textToSend }]
+    const userMsg = { role: 'user', content: textToSend }
+    const newMessages = [...messages, userMsg]
     setMessages(newMessages)
     if (!overrideText) setInput('')
     setLoading(true)
 
-    // 格式化消息发送给后端 API（排除首条辅助欢迎消息，保留合适上下文）
+    // 预先放置一个空的 assistant 消息用于流式追加内容
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
+
     const apiMessages = newMessages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .slice(-10) // 保持最近 10 条上下文
+      .slice(-10)
 
     try {
-      const res = await api.sendChat({
+      const response = await api.sendChatStream({
         provider,
         api_key: apiKey.trim(),
         base_url: baseUrl.trim() || undefined,
@@ -133,8 +135,50 @@ export default function ChatAI() {
         temperature: Number(temperature),
       })
 
-      if (res && res.reply) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: res.reply }])
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}))
+        throw new Error(errJson.detail || `请求失败 (${response.status})`)
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith('data: ')) continue
+          const dataStr = trimmed.slice(6).trim()
+          if (dataStr === '[DONE]') break
+
+          try {
+            const parsed = JSON.parse(dataStr)
+            if (parsed.error) {
+              setErrorMsg(parsed.error)
+              break
+            }
+            if (parsed.content) {
+              setMessages((prev) => {
+                const next = [...prev]
+                const lastIdx = next.length - 1
+                next[lastIdx] = {
+                  ...next[lastIdx],
+                  content: next[lastIdx].content + parsed.content,
+                }
+                return next
+              })
+            }
+          } catch {
+            /* ignore JSON parse errors */
+          }
+        }
       }
     } catch (err) {
       setErrorMsg(err.message || 'AI 响应失败，请检查 API Key 和网络配置')
@@ -142,6 +186,7 @@ export default function ChatAI() {
       setLoading(false)
     }
   }
+
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
