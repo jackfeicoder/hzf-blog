@@ -332,6 +332,7 @@ export default function PostPage() {
                 <button
                   key={item.id}
                   type="button"
+                  title={item.text}
                   className={`toc-item level-${item.level} ${activeTocId === item.id ? 'active' : ''}`}
                   onClick={() => scrollToHeading(item.id)}
                 >

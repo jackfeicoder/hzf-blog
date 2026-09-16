@@ -1790,18 +1790,33 @@ select.form-control option {
 .toc-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 420px;
+  gap: 2px;
+  max-height: 460px;
   overflow-y: auto;
+  padding-right: 4px;
+}
+.toc-nav::-webkit-scrollbar {
+  width: 4px;
+}
+.toc-nav::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+.toc-nav::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
 .toc-item {
   display: block;
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0; /* 关键：防止标题过多时被 flex 挤压成一条线 */
   text-align: left;
   background: transparent;
   border: none;
   border-left: 2px solid transparent;
-  padding: 4px 8px;
+  padding: 6px 8px;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--muted);
   border-radius: 4px;
   cursor: pointer;
