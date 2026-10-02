@@ -117,7 +117,7 @@ export class MusicController {
   }
   seek(time) { if (Number.isFinite(this.audio.duration)) this.audio.currentTime = Math.min(Math.max(0, time), this.audio.duration) }
   volume(value) { const v = Math.min(1, Math.max(0, Number(value) || 0)); this.audio.volume = v; music.set({ volume: v }); try { localStorage.setItem('music-volume', v) } catch { /* optional */ } }
-  mode() { const modes = ['sequence', 'shuffle', 'single']; music.set({ mode: modes[(modes.indexOf(music.get().mode) + 1) % 3] }) }
+  mode(value) { const modes = ['sequence', 'shuffle', 'single']; if (value !== undefined && !modes.includes(value)) return; music.set({ mode: value ?? modes[(modes.indexOf(music.get().mode) + 1) % 3] }) }
   quality(value) { music.set({ quality: value }); if (music.get().current) this.play(music.get().current) }
   enqueue(song, next = false) { music.set({ queue: addToQueue(music.get().queue, song, music.get().current, next), message: next ? '已设为下一首' : '已加入播放队列' }) }
   removeQueue(song) { music.set({ queue: music.get().queue.filter(s => songKey(s) !== songKey(song)) }) }

@@ -15,6 +15,15 @@ class AudioMock {
 }
 const song = id => ({ source: 'wy', id: String(id), name: String(id) })
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
+test('playback settings select valid modes without resolving or restarting audio', () => {
+  const a = new AudioMock(), c = new MusicController(a, () => { throw new Error('unexpected network call') })
+  c.mode('shuffle'); assert.equal(music.get().mode, 'shuffle')
+  c.mode('single'); assert.equal(music.get().mode, 'single')
+  c.mode('invalid'); assert.equal(music.get().mode, 'single')
+  c.mode(); assert.equal(music.get().mode, 'sequence')
+  c.volume(.35); assert.equal(music.get().volume, .35); assert.equal(a.volume, .35)
+  assert.equal(a.played, 0); c.destroy()
+})
 test('late resolver cannot replace newly selected song; pause during loading is respected', async () => {
   const a = new AudioMock(), waits = []
   const c = new MusicController(a, async path => {

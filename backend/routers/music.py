@@ -19,6 +19,7 @@ from database import get_db
 from music_models import MusicEntry, MusicList, MusicSource
 from music_http import fetch, open_http, target
 from music_worker import run_source
+from models import User
 
 router = APIRouter(prefix='/api/music', tags=['music'])
 PLATFORMS = {'wy': 'netease', 'tx': 'tencent', 'kw': 'kuwo', 'kg': 'kugou', 'mg': 'migu'}
@@ -397,6 +398,21 @@ def library(response: Response, db: Session = Depends(get_db), user=Depends(get_
     return [{'id': row.id, 'name': row.name, 'kind': row.kind,
              'songs': [json.loads(e.song) for e in db.query(MusicEntry).filter_by(list_id=row.id).order_by(MusicEntry.updated_at.desc(), MusicEntry.id.desc()).limit(500)]}
             for row in db.query(MusicList).filter_by(user_id=user.id).order_by(MusicList.id)]
+
+
+@router.get('/recommended')
+def recommended(response: Response, db: Session = Depends(get_db)):
+    """The explicitly shared jackfei favorites only; all other lists stay private."""
+    response.headers['Cache-Control'] = 'no-store'
+    rows = db.query(MusicEntry).join(MusicList, MusicEntry.list_id == MusicList.id).join(
+        User, MusicList.user_id == User.id).filter(User.username == 'jackfei', MusicList.kind == 'favorites').order_by(
+        MusicEntry.updated_at.desc(), MusicEntry.id.desc()).limit(500).all()
+    songs, seen = [], set()
+    for row in rows:
+        song = Song.model_validate_json(row.song)
+        if song.key not in seen:
+            songs.append(song.model_dump()); seen.add(song.key)
+    return {'name': 'jackfei的歌单', 'owner': 'jackfei', 'songs': songs}
 
 
 class ListName(BaseModel):

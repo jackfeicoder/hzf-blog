@@ -42,6 +42,50 @@ class MusicTests(unittest.TestCase):
     def tearDown(self):
         self.client.close(); self.engine.dispose(); self.temp.cleanup()
 
+    def test_empty_recommendation_read_does_not_create_private_library(self):
+        response = self.client.get('/api/music/recommended')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'name': 'jackfei的歌单', 'owner': 'jackfei', 'songs': []})
+        self.assertEqual(response.headers['cache-control'], 'no-store')
+        with self.session() as db:
+            self.assertEqual(db.query(MusicList).count(), 0)
+            db.delete(db.query(User).filter_by(username='jackfei').one()); db.commit()
+        self.assertEqual(self.client.get('/api/music/recommended').json()['songs'], [])
+
+    def test_public_recommendation_exposes_only_jackfei_favorites_and_updates(self):
+        j = self.headers('jackfei')
+        lists = self.client.get('/api/music/library', headers=j).json()
+        favorites = next(l for l in lists if l['kind'] == 'favorites')['id']
+        history = next(l for l in lists if l['kind'] == 'history')['id']
+        playlist = self.client.post('/api/music/lists', headers=j, json={'name': '私人歌单'}).json()['id']
+        self.client.put(f'/api/music/lists/{favorites}/songs', headers=j, json=self.song)
+        for i, lid in enumerate((history, playlist), 10):
+            self.client.put(f'/api/music/lists/{lid}/songs', headers=j, json={**self.song, 'id': str(i), 'name': '私有歌曲'})
+        for who in ('alice', 'bob', 'other-admin'):
+            own = self.client.get('/api/music/library', headers=self.headers(who)).json()[0]['id']
+            self.client.put(f'/api/music/lists/{own}/songs', headers=self.headers(who), json={**self.song, 'id': who, 'name': '别人的收藏'})
+        for who in (None, 'alice', 'jackfei', 'other-admin'):
+            response = self.client.get('/api/music/recommended', headers=self.headers(who) if who else {})
+            self.assertEqual(response.json(), {'name': 'jackfei的歌单', 'owner': 'jackfei', 'songs': [self.song]})
+            self.assertNotIn('list_id', response.text)
+        for who, code in ((None, 401), ('alice', 404), ('other-admin', 404)):
+            for method in ('PUT', 'DELETE'):
+                response = self.client.request(method, f'/api/music/lists/{favorites}/songs', headers=self.headers(who) if who else {}, **({'json': self.song} if method == 'PUT' else {}))
+                self.assertEqual(response.status_code, code)
+        self.assertEqual(self.client.delete(f'/api/music/lists/{favorites}/songs?key=wy:123', headers=j).status_code, 200)
+        self.assertEqual(self.client.get('/api/music/recommended').json()['songs'], [])
+
+    def test_recommendation_is_readonly_and_deduplicates_stored_entries(self):
+        with self.session() as db:
+            user = db.query(User).filter_by(username='jackfei').one()
+            for _ in range(2):
+                row = MusicList(user_id=user.id, name='我喜欢', kind='favorites'); db.add(row); db.flush()
+                db.add(MusicEntry(list_id=row.id, song_key='wy:123', song=json.dumps(self.song)))
+            db.commit()
+        self.assertEqual(self.client.get('/api/music/recommended').json()['songs'], [self.song])
+        for method in ('POST', 'PUT', 'DELETE'):
+            self.assertEqual(self.client.request(method, '/api/music/recommended', json=self.song).status_code, 405)
+
     def test_library_owner_isolation_and_fk_cleanup(self):
         a = self.client.get('/api/music/library', headers=self.headers())
         self.assertEqual(a.headers['cache-control'], 'private, no-store')
