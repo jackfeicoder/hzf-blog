@@ -3,6 +3,7 @@ import { AuthProvider } from './AuthContext'
 import Layout from './components/Layout'
 import Home from './pages/Home'
 import { lazy, Suspense } from 'react'
+import MusicHost from './music/MusicHost'
 
 const PostPage = lazy(() => import('./pages/PostPage'))
 const Editor = lazy(() => import('./pages/Editor'))
@@ -14,6 +15,7 @@ const ChatAI = lazy(() => import('./pages/ChatAI'))
 const Visitors = lazy(() => import('./pages/Visitors'))
 const Study = lazy(() => import('./pages/Study'))
 const Videos = lazy(() => import('./pages/Videos'))
+const Music = lazy(() => import('./pages/Music'))
 const Admin = lazy(() => import('./pages/Admin'))
 
 
@@ -21,6 +23,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <MusicHost />
         <Layout>
           <Suspense fallback={<div className="container empty">正在加载页面…</div>}><Routes>
             <Route path="/" element={<Home />} />
@@ -34,6 +37,7 @@ export default function App() {
             <Route path="/ai" element={<ChatAI />} />
             <Route path="/visitors" element={<Visitors />} />
             <Route path="/videos" element={<Videos />} />
+            <Route path="/music" element={<Music />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/study" element={<Suspense fallback={<div className="container">正在加载学习打卡…</div>}><Study /></Suspense>} />
             <Route path="*" element={<Navigate to="/" replace />} />

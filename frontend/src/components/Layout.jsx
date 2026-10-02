@@ -46,6 +46,7 @@ const navItems = [
   { to: 'https://imagefree.net', label: '画图', icon: '🎨', external: true },
   { to: '/study', label: '学习打卡', icon: '✅' },
   { to: '/videos', label: '看视频', icon: '🎬' },
+  { to: '/music', label: '听音乐', icon: '🎵' },
   { to: '/admin', label: '管理后台', icon: '⚙️', admin: true },
 ]
 
