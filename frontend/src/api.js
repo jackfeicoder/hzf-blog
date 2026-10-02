@@ -1,4 +1,37 @@
+import { QueryCache } from './queryCache.js'
+
 const TOKEN_KEY = 'blog_token'
+const publicCache = new QueryCache()
+const videoCache = new QueryCache()
+let cacheToken
+export const invalidatePublicCache = () => { publicCache.clear(); videoCache.clear() }
+
+function syncCacheSession() {
+  const token = getToken()
+  if (token !== cacheToken) {
+    invalidatePublicCache()
+    cacheToken = token
+  }
+}
+
+function cached(path) {
+  syncCacheSession()
+  return publicCache.read(path, () => request(path))
+}
+
+function peek(path) {
+  syncCacheSession()
+  return publicCache.peek(path)
+}
+
+function postsPath({ page = 1, page_size = 10, category_id, tag, search, author, sort = 'new' } = {}) {
+  const params = new URLSearchParams({ page, page_size, sort })
+  if (category_id) params.set('category_id', category_id)
+  if (tag) params.set('tag', tag)
+  if (search) params.set('search', search)
+  if (author) params.set('author', author)
+  return `/api/posts?${params}`
+}
 
 // 持久化到 localStorage：关浏览器后再开仍保持登录
 // 同时清理旧的 sessionStorage，避免两处不一致
@@ -16,6 +49,7 @@ export const getToken = () => {
 }
 
 export const setToken = (t) => {
+  invalidatePublicCache()
   try {
     localStorage.setItem(TOKEN_KEY, t)
     sessionStorage.removeItem(TOKEN_KEY)
@@ -23,6 +57,7 @@ export const setToken = (t) => {
 }
 
 export const clearToken = () => {
+  invalidatePublicCache()
   try {
     localStorage.removeItem(TOKEN_KEY)
     sessionStorage.removeItem(TOKEN_KEY)
@@ -35,10 +70,14 @@ async function request(path, { method = 'GET', body, auth = false } = {}) {
     const token = getToken()
     if (token) headers.Authorization = `Bearer ${token}`
   }
+  const controller = method === 'GET' ? new AbortController() : null
+  const timer = controller ? setTimeout(() => controller.abort(), 15_000) : null
+  try {
   const res = await fetch(path, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    signal: controller?.signal,
   })
   if (!res.ok) {
     let detail = `请求失败 (${res.status})`
@@ -61,10 +100,20 @@ async function request(path, { method = 'GET', body, auth = false } = {}) {
         }
       }
     } catch { /* ignore */ }
-    throw new Error(detail)
+    const error = new Error(detail)
+    error.status = res.status
+    throw error
   }
+  if (method !== 'GET' && /^\/api\/(posts|users|auth|admin|comments)(\/|\?|$)/.test(path)) invalidatePublicCache()
+  if (method !== 'GET' && path.startsWith('/api/media/videos')) videoCache.clear()
   if (res.status === 204) return null
-  return res.json()
+  return await res.json()
+  } catch (error) {
+    if (controller?.signal.aborted) throw new Error('加载超时，请稍后重试或检查网络线路')
+    throw error
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 export const api = {
@@ -77,25 +126,24 @@ export const api = {
   updateMe: (data) => request('/api/auth/me', { method: 'PUT', body: data, auth: true }),
 
   // 文章
-  listPosts: ({ page = 1, page_size = 10, category_id, tag, search, author, sort = 'new' } = {}) => {
-    const params = new URLSearchParams({ page, page_size, sort })
-    if (category_id) params.set('category_id', category_id)
-    if (tag) params.set('tag', tag)
-    if (search) params.set('search', search)
-    if (author) params.set('author', author)
-    return request(`/api/posts?${params}`)
-  },
+  listPosts: (params = {}) => params.author ? request(postsPath(params)) : cached(postsPath(params)),
+  peekPosts: (params = {}) => params.author ? undefined : peek(postsPath(params)),
+  peekCategories: () => peek('/api/categories'),
+  peekHotPosts: (limit = 10) => peek(`/api/rankings/posts?limit=${limit}`),
+  peekTopAuthors: (limit = 8) => peek(`/api/rankings/authors?limit=${limit}`),
+  invalidatePublicCache,
   getPost: (id) => request(`/api/posts/${id}`),
   createPost: (data) => request('/api/posts', { method: 'POST', body: data, auth: true }),
   updatePost: (id, data) => request(`/api/posts/${id}`, { method: 'PUT', body: data, auth: true }),
-  deletePost: (id) => request(`/api/posts/${id}`, { method: 'DELETE', auth: true }),
+  deletePost: (id, password) => request(`/api/posts/${id}`, { method: 'DELETE', body: { password }, auth: true }),
   likePost: (id) => request(`/api/posts/${id}/like`, { method: 'POST', auth: true }),
   favoritePost: (id) => request(`/api/posts/${id}/favorite`, { method: 'POST', auth: true }),
 
   // 分类 / 排行
-  listCategories: () => request('/api/categories'),
-  hotPosts: (limit = 10) => request(`/api/rankings/posts?limit=${limit}`),
-  topAuthors: (limit = 8) => request(`/api/rankings/authors?limit=${limit}`),
+  adminRequest: (path, options = {}) => request(`/api/admin${path}`, { ...options, auth: true }),
+  listCategories: () => cached('/api/categories'),
+  hotPosts: (limit = 10) => cached(`/api/rankings/posts?limit=${limit}`),
+  topAuthors: (limit = 8) => cached(`/api/rankings/authors?limit=${limit}`),
 
   // 评论
   listComments: (postId) => request(`/api/posts/${postId}/comments`),
@@ -138,6 +186,7 @@ export const api = {
       const err = await res.json().catch(() => ({}))
       throw new Error(err.detail || '头像上传失败')
     }
+    invalidatePublicCache()
     return res.json()
   },
 
@@ -147,6 +196,22 @@ export const api = {
 
   // 访客统计
   getVisitors: () => request('/api/visitors'),
+
+  videoLinks: () => { syncCacheSession(); return videoCache.read('videos', () => request('/api/media/videos')) },
+  peekVideoLinks: () => { syncCacheSession(); return videoCache.peek('videos') },
+  refreshVideoLinks: () => videoCache.clear(),
+  saveVideoLink: ({ id, ...data }) => request(`/api/media/videos${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: data, auth: true }),
+  deleteVideoLink: (id) => request(`/api/media/videos/${id}`, { method: 'DELETE', auth: true }),
+
+  studyToday: () => request('/api/study/today', { auth: true }),
+  studyTask: (key, data) => request(`/api/study/today/tasks/${encodeURIComponent(key)}`, { method: 'PUT', body: data, auth: true }),
+  studyProgress: () => request('/api/study/progress', { auth: true }),
+  studyHistory: (month) => request(`/api/study/history?month=${month}`, { auth: true }),
+  studyNextRound: (kind, mode) => request(`/api/study/rounds/${kind}/next`, { method: 'POST', body: { mode }, auth: true }),
+  studyBank: () => request('/api/study/bank', { auth: true }),
+  studySaveItem: (data) => request(`/api/study/bank${data.id ? `/${data.id}` : ''}`, { method: data.id ? 'PUT' : 'POST', body: data, auth: true }),
+  studyPreview: (post_id, kind) => request('/api/study/bank/preview', { method: 'POST', body: { post_id, kind }, auth: true }),
+  studyImport: (items) => request('/api/study/bank/import', { method: 'POST', body: { items }, auth: true }),
 
   // AI 聊天流式接口
   sendChatStream: (data) =>

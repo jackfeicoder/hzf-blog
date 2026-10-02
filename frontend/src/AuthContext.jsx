@@ -14,7 +14,10 @@ export function AuthProvider({ children }) {
     }
     api.me()
       .then(setUser)
-      .catch(() => clearToken())
+      .catch(error => {
+        // A slow/offline network must not erase an otherwise valid session.
+        if (error.status === 401 || error.status === 403) clearToken()
+      })
       .finally(() => setLoading(false))
   }, [])
 
