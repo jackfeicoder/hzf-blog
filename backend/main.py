@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
                 )
             )
             db.commit()
-            print(f"[init] 已创建管理员账户: {username} / {password}（请尽快修改）")
+            print(f"[init] 已创建管理员账户: {username}（密码由部署环境配置）")
         # 预置分类
         if not db.query(models.Category).first():
             for name in DEFAULT_CATEGORIES:
@@ -72,4 +72,3 @@ app.include_router(visitors.router)
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
-

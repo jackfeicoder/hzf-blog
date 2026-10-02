@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -13,7 +14,16 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 
 # 默认全员免费 API Key (商汤 SenseNova)
-DEFAULT_FREE_KEY = "sk-lQYXt2cgWUprdhd4zksTF3FH9FrEOC2H"
+DEFAULT_FREE_KEY = os.getenv('SENSENOVA_API_KEY', '').strip()
+
+
+def resolve_api_key(provider: str, supplied: str | None) -> str:
+    key = supplied.strip() if supplied else ''
+    if not key and provider.lower() == 'sensenova':
+        key = DEFAULT_FREE_KEY
+    if not key:
+        raise HTTPException(status_code=400, detail='请填写 API Key，或由管理员配置 SENSENOVA_API_KEY')
+    return key
 
 # 预设提供商 → 默认 Base URL（OpenAI 兼容 /v1）
 PROVIDER_BASE_URLS: dict[str, str] = {
@@ -59,10 +69,10 @@ def list_providers():
         "providers": [
             {
                 "id": "sensenova",
-                "name": "商汤日日新 (SenseNova · 默认免费)",
+                "name": "商汤日日新 (SenseNova)",
                 "base_url": PROVIDER_BASE_URLS["sensenova"],
                 "models": ["sensenova-6.7-flash-lite", "deepseek-v4-flash"],
-                "is_free": True,
+                "is_free": bool(DEFAULT_FREE_KEY),
             },
 
             {
@@ -102,13 +112,7 @@ async def chat(data: ChatIn):
     model = data.model or DEFAULT_MODELS.get(data.provider.lower(), "Nova-5-Pro")
     url = f"{base}/chat/completions"
 
-    # API Key 降级策略：如果是 SenseNova 且未传有效 Key，强制自动填充免费公用 Key
-    api_key = data.api_key.strip() if data.api_key else ""
-    if data.provider.lower() == "sensenova":
-        if not api_key or not api_key.startswith("sk-lQYXt"):
-            api_key = DEFAULT_FREE_KEY
-    elif not api_key:
-        raise HTTPException(status_code=400, detail="请填写该模型提供商的 API Key")
+    api_key = resolve_api_key(data.provider, data.api_key)
 
 
 
@@ -182,12 +186,7 @@ async def chat_stream(data: ChatIn):
     model = data.model or DEFAULT_MODELS.get(data.provider.lower(), "sensenova-6.7-flash-lite")
     url = f"{base}/chat/completions"
 
-    api_key = data.api_key.strip() if data.api_key else ""
-    if data.provider.lower() == "sensenova":
-        if not api_key or not api_key.startswith("sk-lQYXt"):
-            api_key = DEFAULT_FREE_KEY
-    elif not api_key:
-        raise HTTPException(status_code=400, detail="请填写该模型提供商的 API Key")
+    api_key = resolve_api_key(data.provider, data.api_key)
 
     payload = {
         "model": model,

@@ -17,7 +17,7 @@ export default function ChatAI() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: '你好！我是 AI 智能助手。目前默认开启**商汤日日新 (SenseNova)** 免费大模型，包含 `sensenova-6.7-flash-lite` 和 `deepseek-v4-flash` 官方大语言模型，无需填 Key 即可零门槛畅聊！',
+      content: '你好！我是 AI 智能助手。选择模型提供商后即可开始对话；请填写自己的 API Key，或使用站点管理员已配置的 SenseNova 服务。模型可用性和额度以提供商为准。',
     },
   ])
 
@@ -50,14 +50,8 @@ export default function ChatAI() {
     if (savedModel) setModel(savedModel)
     if (savedBaseUrl) setBaseUrl(savedBaseUrl)
 
-    // 如果当前为商汤免费模式，默认清空旧 key 确保直接走后端公用 key
-    if (savedProvider === 'sensenova') {
-      setApiKey('')
-      localStorage.removeItem(STORAGE_KEY_PREFIX + 'apikey')
-    } else {
-      const savedKey = localStorage.getItem(STORAGE_KEY_PREFIX + 'apikey') || ''
-      if (savedKey && savedKey !== 'sk-xxxx') setApiKey(savedKey)
-    }
+    const savedKey = localStorage.getItem(STORAGE_KEY_PREFIX + 'apikey') || ''
+    if (savedKey && savedKey !== 'sk-xxxx') setApiKey(savedKey)
   }, [])
 
   // 切换 Provider 时自动切换默认 Model
@@ -65,11 +59,6 @@ export default function ChatAI() {
     const pId = e.target.value
     setProvider(pId)
     localStorage.setItem(STORAGE_KEY_PREFIX + 'provider', pId)
-
-    if (pId === 'sensenova') {
-      setApiKey('')
-      localStorage.removeItem(STORAGE_KEY_PREFIX + 'apikey')
-    }
 
     const found = providers.find((p) => p.id === pId)
     if (found && found.models && found.models.length > 0) {
@@ -107,7 +96,7 @@ export default function ChatAI() {
     const textToSend = overrideText || input
     if (!textToSend.trim()) return
     if (!apiKey.trim() && provider !== 'sensenova') {
-      setErrorMsg('非免费模型请先填写 API Key')
+      setErrorMsg('请先填写 API Key')
       return
     }
     setErrorMsg('')
@@ -258,13 +247,13 @@ export default function ChatAI() {
           </div>
 
           <div className="form-group">
-            <label>API Key {provider === 'sensenova' && <span className="free-badge">🎁 默认全员免费</span>}</label>
+            <label>API Key {provider === 'sensenova' && providers.find(p => p.id === provider)?.is_free && <span className="free-badge">站点已配置</span>}</label>
             <div className="key-input-wrapper">
               <input
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
                 onChange={(e) => handleKeyChange(e.target.value)}
-                placeholder={provider === 'sensenova' ? '留空即使用全站免费 Key (可自填)' : '输入 sk-xxxx'}
+                placeholder={provider === 'sensenova' ? '填写自己的 Key，或使用管理员已配置的 Key' : '输入 API Key'}
                 className="form-control"
               />
 
@@ -273,7 +262,7 @@ export default function ChatAI() {
                   type="button"
                   className="btn btn-secondary btn-sm key-toggle-btn"
                   onClick={() => handleKeyChange('')}
-                  title="清空并使用全站免费 Key"
+                  title="清空当前 Key"
                 >
                   清空Key
                 </button>
