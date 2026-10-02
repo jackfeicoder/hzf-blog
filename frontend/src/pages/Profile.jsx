@@ -4,7 +4,7 @@ import { api } from '../api'
 import { useAuth } from '../AuthContext'
 import PostCard from '../components/PostCard'
 import { UserAvatar } from '../components/Layout'
-import { formatNum } from '../utils'
+import { formatNum } from '../format'
 
 export default function Profile() {
   const { username } = useParams()

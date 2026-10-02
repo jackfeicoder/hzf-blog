@@ -123,7 +123,7 @@ export default function Layout({ children }) {
     }
   }, [menuOpen])
 
-  const links = navItems.filter((i) => !i.auth || user)
+  const links = navItems.filter((i) => (!i.auth || user) && (!i.admin || user?.username === 'jackfei'))
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
 
   return (

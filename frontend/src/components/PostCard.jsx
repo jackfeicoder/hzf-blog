@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { formatNum, timeAgo } from '../utils'
+import { formatNum, timeAgo } from '../format'
 import { UserAvatar } from './Layout'
 
 export default function PostCard({ post, index = 0 }) {

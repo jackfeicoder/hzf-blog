@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { avatarText } from '../components/Layout'
-import { formatNum } from '../utils'
+import { formatNum } from '../format'
 
 export default function Rank() {
   const [hot, setHot] = useState([])

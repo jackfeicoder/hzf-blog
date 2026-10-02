@@ -1,7 +1,22 @@
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import hljs from 'highlight.js'
+import hljs from 'highlight.js/lib/core'
+import java from 'highlight.js/lib/languages/java'
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import python from 'highlight.js/lib/languages/python'
+import sql from 'highlight.js/lib/languages/sql'
+import bash from 'highlight.js/lib/languages/bash'
+import json from 'highlight.js/lib/languages/json'
+import xml from 'highlight.js/lib/languages/xml'
+import css from 'highlight.js/lib/languages/css'
+import cpp from 'highlight.js/lib/languages/cpp'
+import go from 'highlight.js/lib/languages/go'
+import markdown from 'highlight.js/lib/languages/markdown'
 import 'highlight.js/styles/github-dark.min.css'
+
+Object.entries({ java, javascript, typescript, python, sql, bash, json, xml, css, cpp, go, markdown })
+  .forEach(([name, language]) => hljs.registerLanguage(name, language))
 
 function escapeHtml(text = '') {
   return String(text)
@@ -18,7 +33,9 @@ function highlightCode(code, lang) {
     if (lang && hljs.getLanguage(lang)) {
       return hljs.highlight(raw, { language: lang, ignoreIllegals: true }).value
     }
-    return hljs.highlightAuto(raw).value
+    // Unknown/unlabelled blocks remain readable; avoid auto-detecting every
+    // possible language for long interview and algorithm articles.
+    return escapeHtml(raw)
   } catch {
     return escapeHtml(raw)
   }
@@ -231,20 +248,4 @@ export function bindCodeCopy(root) {
   })
 }
 
-export function timeAgo(iso) {
-  if (!iso) return ''
-  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
-  const diff = (Date.now() - d.getTime()) / 1000
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
-  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
-  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)} 天前`
-  return d.toLocaleDateString('zh-CN')
-}
-
-export function formatNum(n) {
-  if (n == null) return 0
-  if (n >= 10000) return (n / 10000).toFixed(1) + 'w'
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
-  return n
-}
+export { timeAgo, formatNum } from './format'

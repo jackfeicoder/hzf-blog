@@ -45,7 +45,9 @@ export default function Editor() {
       .catch((e) => setErr(e.message))
   }, [id, isEdit])
 
-  const html = useMemo(() => renderMarkdown(content), [content])
+  // No need to parse and highlight the entire article on every keystroke
+  // while the preview is closed.
+  const html = useMemo(() => preview ? renderMarkdown(content) : '', [content, preview])
 
   useEffect(() => {
     if (preview && previewRef.current) bindCodeCopy(previewRef.current)

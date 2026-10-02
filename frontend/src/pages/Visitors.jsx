@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { UserAvatar } from '../components/Layout'
-import { formatNum, timeAgo } from '../utils'
+import { formatNum, timeAgo } from '../format'
 
 export default function Visitors() {
   const [data, setData] = useState(null)

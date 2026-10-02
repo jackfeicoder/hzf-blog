@@ -3,9 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import PostCard, { PostCardSkeleton } from '../components/PostCard'
 import { avatarText } from '../components/Layout'
-import { formatNum } from '../utils'
+import { formatNum } from '../format'
+import { useAuth } from '../AuthContext'
 
 export default function Home() {
+  const { user } = useAuth()
   const [params, setParams] = useSearchParams()
   const category = params.get('category') || ''
   const tag = params.get('tag') || ''
@@ -20,16 +22,28 @@ export default function Home() {
   const [authors, setAuthors] = useState([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState(search)
+  const [error, setError] = useState('')
+  const [retry, setRetry] = useState(0)
   const pageSize = 10
 
   useEffect(() => {
-    api.listCategories().then(setCategories).catch(() => {})
-    api.hotPosts(8).then(setHot).catch(() => {})
-    api.topAuthors(6).then(setAuthors).catch(() => {})
-  }, [])
+    let active = true
+    setCategories(api.peekCategories() || [])
+    setHot(api.peekHotPosts(8) || [])
+    setAuthors(api.peekTopAuthors(6) || [])
+    api.listCategories().then(data => { if (active) setCategories(data) }).catch(() => {})
+    api.hotPosts(8).then(data => { if (active) setHot(data) }).catch(() => {})
+    api.topAuthors(6).then(data => { if (active) setAuthors(data) }).catch(() => {})
+    return () => { active = false }
+  }, [user?.id, retry])
 
   useEffect(() => {
-    setLoading(true)
+    let active = true
+    const cached = api.peekPosts({ page, page_size: pageSize, category_id: category || undefined, tag: tag || undefined, search: search || undefined, sort })
+    setPosts(cached?.items || [])
+    setTotal(cached?.total || 0)
+    setLoading(!cached)
+    setError('')
     api
       .listPosts({
         page,
@@ -40,12 +54,14 @@ export default function Home() {
         sort,
       })
       .then((data) => {
+        if (!active) return
         setPosts(data.items)
         setTotal(data.total)
       })
-      .catch((e) => console.error(e))
-      .finally(() => setLoading(false))
-  }, [page, category, tag, search, sort])
+      .catch((e) => { if (active) setError(cached ? '更新失败，当前显示上次加载的内容。' : e.message) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [page, category, tag, search, sort, user?.id, retry])
 
   useEffect(() => {
     setQ(search)
@@ -196,6 +212,7 @@ export default function Home() {
           </div>
         )}
 
+        {error && <div className="filter-bar" role="alert">{error}<button type="button" className="btn ghost sm" onClick={() => { api.invalidatePublicCache(); setRetry(n => n + 1) }}>重试</button></div>}
         {loading ? (
           <>
             <PostCardSkeleton />

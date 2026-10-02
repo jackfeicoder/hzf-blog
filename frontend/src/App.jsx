@@ -2,14 +2,16 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
 import Layout from './components/Layout'
 import Home from './pages/Home'
-import PostPage from './pages/PostPage'
-import Editor from './pages/Editor'
-import Login from './pages/Login'
-import Register from './pages/Register'
-import Profile from './pages/Profile'
-import Rank from './pages/Rank'
-import ChatAI from './pages/ChatAI'
-import Visitors from './pages/Visitors'
+import { lazy, Suspense } from 'react'
+
+const PostPage = lazy(() => import('./pages/PostPage'))
+const Editor = lazy(() => import('./pages/Editor'))
+const Login = lazy(() => import('./pages/Login'))
+const Register = lazy(() => import('./pages/Register'))
+const Profile = lazy(() => import('./pages/Profile'))
+const Rank = lazy(() => import('./pages/Rank'))
+const ChatAI = lazy(() => import('./pages/ChatAI'))
+const Visitors = lazy(() => import('./pages/Visitors'))
 
 
 export default function App() {
@@ -17,7 +19,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Layout>
-          <Routes>
+          <Suspense fallback={<div className="container empty">正在加载页面…</div>}><Routes>
             <Route path="/" element={<Home />} />
             <Route path="/post/:id" element={<PostPage />} />
             <Route path="/write" element={<Editor />} />
@@ -29,7 +31,7 @@ export default function App() {
             <Route path="/ai" element={<ChatAI />} />
             <Route path="/visitors" element={<Visitors />} />
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          </Routes></Suspense>
         </Layout>
       </BrowserRouter>
     </AuthProvider>
