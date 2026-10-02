@@ -73,9 +73,12 @@ tone_bytes = buffer.getvalue()
 
 
 async def fixture_upstream(url, options=None):
+    import os
     from urllib.parse import urlsplit, parse_qs
     q = parse_qs(urlsplit(url).query)
     if 'u.y.qq.com' in url:
+        if 'tx' in os.getenv('MUSIC_PREVIEW_FAIL_SEARCH', '').split(','):
+            raise ValueError('Local test fixture: upstream unavailable')
         return {'code': 0, 'req': {'code': 0, 'data': {'body': {'song': {'list': [dict(mid='qq1', name='QQ · 测试音频', singer=[{'name': '本地测试音频'}], album={'name': '交互测试'}, interval=60)]}}}}}
     if 'search.kuwo.cn' in url:
         return {'abslist': [dict(MUSICRID='MUSIC_1', SONGNAME='酷我 · 测试音频', ARTIST='本地测试音频', DURATION=60)]}

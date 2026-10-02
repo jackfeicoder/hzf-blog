@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from
 import { Link } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { musicApi } from '../music/api'
+import { searchMusic } from '../music/search'
 import { music, useMusic } from '../music/store'
 import { lyricIndex, songKey } from '../music/logic'
 import { Controls, Progress, PlaybackSettings, Volume } from '../music/PlayerBar'
@@ -46,6 +47,7 @@ export default function Music() {
   const [recommendation, setRecommendation] = useState({ songs: [] }), [recommendLoading, setRecommendLoading] = useState(true), [recommendError, setRecommendError] = useState('')
   const recommendAbort = useRef(null), recommendVersion = useRef(0)
   const [loading, setLoading] = useState(false), [error, setError] = useState(''), [modal, setModal] = useState(null), [listName, setListName] = useState(''), [saving, setSaving] = useState(false)
+  const [searchNotice, setSearchNotice] = useState('')
   const expanded = s.lyricsOpen, setExpanded = value => music.set({ lyricsOpen: value })
   useEffect(() => {
     if (!expanded) return
@@ -93,9 +95,18 @@ export default function Music() {
   const search = async (e, page = 1, platform = source, text = keyword) => {
     e?.preventDefault(); if (!text.trim()) return
     const current = ++version.current
-    abort.current?.abort(); abort.current = new AbortController(); setLoading(true); setError(''); setView('search'); setQuery(text.trim())
-    try { const result = await musicApi(`/search?${new URLSearchParams({ q: text.trim(), source: platform, page })}`, { signal: abort.current.signal, timeout: 12000 }); if (current === version.current) setData(result) }
-    catch (e) { if (current === version.current) { setData({ items: [], page: 1, has_more: false }); setError(e.name === 'AbortError' ? '搜索超时，可以切换平台再试' : e.message) } }
+    abort.current?.abort(); abort.current = new AbortController(); setLoading(true); setError(''); setSearchNotice(''); setView('search'); setQuery(text.trim())
+    setData({ items: [], page, has_more: false })
+    try {
+      const result = await searchMusic({ query: text.trim(), source: platform, page, signal: abort.current.signal, onAttempt: next => {
+        if (current === version.current && next !== platform) setSearchNotice(`${platforms[platform]}暂不可用，正在自动尝试备用平台…`)
+      } })
+      if (current === version.current) {
+        setData(result); setSource(result.source)
+        setSearchNotice(result.switched ? `${platforms[platform]}暂不可用，已自动切换到${platforms[result.source]}。搜索结果和播放均使用${platforms[result.source]}。` : '')
+      }
+    }
+    catch (e) { if (current === version.current) { setSearchNotice(''); setError((e.name === 'AbortError' ? '搜索超时，请稍后重试' : e.message) + (page > 1 ? '；可重新搜索，从第一页自动尝试备用平台。' : '')) } }
     finally { if (current === version.current) setLoading(false) }
   }
   const editList = async e => {
@@ -123,13 +134,14 @@ export default function Music() {
     </aside>
     <section className="music-main"><header className="music-heading"><div><span className="music-eyebrow">CODEBLOG MUSIC</span><h1>{view === 'recommended' ? '推荐歌曲' : view === 'sources' ? '我的音源' : selected ? selected.name : view === 'queue' ? '播放队列' : '发现好音乐'}</h1></div><button className="music-mobile-expand" onClick={() => setExpanded(!expanded)}>{expanded ? '收起播放器' : '展开播放器'}</button></header>
       {s.message && <div className={`music-notice ${s.status === 'error' ? 'music-error' : ''}`} role="status">{s.message}{s.status === 'error' && <button onClick={() => s.current && music.controller?.play(s.current)}>重试播放</button>}<button aria-label="关闭提示" onClick={() => music.set({ message: '' })}>✕</button></div>}{error && <div className="music-error" role="alert">{error}</div>}
+      {view === 'search' && searchNotice && <div className="music-notice" role="status">{searchNotice}</div>}
       {view === 'sources' ? <Sources /> : <>
         {view === 'recommended' && <><div className="music-recommend-banner"><span>管</span><div><h2>管理员的歌单</h2><p>来自管理员 的「我喜欢」 · 全站共享好音乐</p></div></div>{recommendError && <div className="music-error" role="alert">{recommendError}<button onClick={loadRecommended}>重试</button></div>}</>}
         {view === 'search' && <><form className="music-search" onSubmit={search}><span>⌕</span><input aria-label="搜索歌曲或歌手" placeholder="搜索歌曲、歌手，找到想听的声音" value={keyword} onChange={e => setKeyword(e.target.value)} maxLength={100} /><button className="btn primary" disabled={!keyword.trim()}>搜索</button></form><div className="music-platforms" role="group" aria-label="搜索平台">{Object.entries(platforms).map(([key, name]) => <button key={key} aria-pressed={source === key} className={source === key ? 'active' : ''} onClick={() => { setSource(key); if (query) search(null, 1, key, query) }}>{name}</button>)}</div></>}
         <div className="music-section-head"><div><h3>{view === 'recommended' || selected ? `${songs.length} 首歌曲` : view === 'queue' ? `${songs.length} 首待播放` : query ? `“${query}”的搜索结果` : '听点什么？'}</h3><p>{view === 'recommended' ? recommendLoading && !ownsRecommendation ? '正在读取推荐歌单…' : '随管理员的收藏更新，你也可以收藏到自己的歌单' : loading ? '正在搜索，你仍可继续播放…' : selected ? '你的歌单，只属于你' : view === 'queue' ? '支持下一首插队，切换页面也能听' : '选择一个平台，输入歌名或歌手'}</p></div>{view === 'recommended' && <button disabled={recommendLoading} onClick={loadRecommended}>{recommendLoading ? '刷新中…' : '刷新推荐'}</button>}{songs.length > 0 && <button className="btn ghost sm" onClick={() => music.controller?.play(songs[0], songs)}>▶ 全部播放</button>}{selected?.kind === 'playlist' && <><button onClick={() => { setListName(selected.name); setModal({ type: 'rename', id: selected.id }) }}>重命名</button><button onClick={deleteList}>删除歌单</button></>}</div>
         <div className="music-song-list" aria-busy={view === 'recommended' ? recommendLoading : loading}>{songs.map((song, index) => <SongRow key={songKey(song)} song={song} index={index} current={songKey(s.current) === songKey(song)} liked={favorites.has(songKey(song))} disabled={s.libraryLoading} play={song => music.controller?.play(song, songs)} add={song => setModal({ type: 'add', song })} remove={selected ? song => music.controller?.updateList(selected.id, song, true) : view === 'recommended' && ownsRecommendation ? song => music.controller?.updateList(ownFavorites.id, song, true) : view === 'queue' ? song => music.controller?.removeQueue(song) : null} />)}
           {!songs.length && <div className="music-empty"><div className="music-empty-note">♫</div><h3>{view === 'recommended' ? recommendLoading ? '正在读取推荐歌曲' : recommendError ? '推荐歌单暂时没有响应' : '推荐歌单还很安静' : loading ? '正在寻找好音乐' : selected ? '歌单还很安静' : query ? '暂时没找到歌曲' : '今天，想听哪首歌？'}</h3><p>{view === 'recommended' ? '管理员收藏喜欢的歌曲后，会自动出现在这里' : loading ? '搜索不会中断当前播放' : selected ? '搜索后点 ♡ 喜欢，或 ＋ 加入歌单' : '搜索歌名或歌手，支持五个平台和自动换源'}</p>{!query && view === 'search' && <div className="music-suggestions">{['晴天', '陈奕迅', '纯音乐'].map(q => <button key={q} onClick={() => { setKeyword(q); search(null, 1, source, q) }}>{q} ↗</button>)}</div>}</div>}
-        </div>{view === 'search' && query && <div className="music-pagination"><button disabled={data.page <= 1 || loading} onClick={() => search(null, data.page - 1, source, query)}>上一页</button><span>第 {data.page} 页</span><button disabled={!data.has_more || loading} onClick={() => search(null, data.page + 1, source, query)}>下一页</button>{loading && <button onClick={() => { ++version.current; abort.current?.abort(); setLoading(false) }}>取消搜索</button>}</div>}
+        </div>{view === 'search' && query && <div className="music-pagination"><button disabled={data.page <= 1 || loading} onClick={() => search(null, data.page - 1, source, query)}>上一页</button><span>第 {data.page} 页</span><button disabled={!data.has_more || loading} onClick={() => search(null, data.page + 1, source, query)}>下一页</button>{loading && <button onClick={() => { ++version.current; abort.current?.abort(); setLoading(false); setSearchNotice('') }}>取消搜索</button>}</div>}
       </>}
     </section>
     <aside className="music-detail"><button className="music-expanded-close" aria-label="收起播放器" onClick={() => setExpanded(false)}>✕</button><Cover song={s.current} /><h2>{s.current?.name || '随时，随地，随心听'}</h2><p>{s.current?.singer || '你的专属音乐角落'}</p><div className="music-quality"><label>播放音质 <select aria-label="播放音质" value={s.quality} onChange={e => music.controller?.quality(e.target.value)}><option value="128k">标准 128k</option><option value="320k">高品 320k</option><option value="flac">无损 FLAC</option><option value="flac24bit">Hi-Res</option></select></label><small>音源不支持时自动降级</small></div><Lyrics /><div className="music-detail-controls"><Controls /><Progress /><div className="music-full-extras"><PlaybackSettings /><Volume label="播放器音量" /><button onClick={() => { setView('queue'); setExpanded(false) }}>播放队列 {s.queue.length}</button></div>{s.message && <p role="status">{s.message}</p>}</div></aside>

@@ -51,8 +51,10 @@ def health(required_paths):
     raise RuntimeError("New backend did not pass health and route checks")
 
 
-def release(stage, files=None, required_paths=("/api/study/today",)):
+def release(stage, files=None, required_paths=("/api/study/today",), restart_backend=True):
     files = FILES if files is None else files
+    if not restart_backend and any(not name.startswith('frontend/src/') for name in files):
+        raise RuntimeError('A no-restart release may publish only frontend source files')
     stage = stage.resolve(strict=True)
     if not ROOT.is_dir() or not str(stage).startswith("/tmp/hzf-study-"):
         raise RuntimeError("Unexpected deployment directory")
@@ -91,7 +93,8 @@ def release(stage, files=None, required_paths=("/api/study/today",)):
             str(ROOT / "backend/venv/bin/python"), "-m", "unittest", "discover",
             "-s", str(stage / "backend/tests"), "-p", "test_*.py", "-v",
         ], cwd=ROOT / "backend", check=True)
-        subprocess.run(["systemctl", "restart", "hzf-blog.service"], check=True)
+        if restart_backend:
+            subprocess.run(["systemctl", "restart", "hzf-blog.service"], check=True)
         health(required_paths)
         # Publish content-addressed assets first; index.html is the final switch.
         for source in (stage / "frontend/dist").rglob("*"):
@@ -108,7 +111,8 @@ def release(stage, files=None, required_paths=("/api/study/today",)):
         atomic_copy(backup / "frontend/dist/index.html", ROOT / "frontend/dist/index.html")
         # Keep additive study tables in place; never overwrite live user data
         # during application rollback. A coherent pre-release DB is backed up.
-        subprocess.run(["systemctl", "restart", "hzf-blog.service"], check=False)
+        if restart_backend:
+            subprocess.run(["systemctl", "restart", "hzf-blog.service"], check=False)
         print("APPLICATION_ROLLED_BACK; database backup retained", flush=True)
         raise
 

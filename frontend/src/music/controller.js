@@ -68,9 +68,9 @@ export class MusicController {
       if (generation === this.generation) music.set({ lyrics: parseLyrics(data.lyric), translation: parseLyrics(data.translation), lyricsLoading: false })
     } catch { if (generation === this.generation) music.set({ lyricsLoading: false }) }
   }
-  async resolve(song, generation, seek = 0) {
+  async resolve(song, generation, seek = 0, gatewayRetry = false) {
     this.abort?.abort(); this.abort = new AbortController(); this.url = null
-    music.set({ status: 'resolving', playing: false, message: this.failures.length ? '正在尝试下一个音源…' : '' })
+    music.set({ status: 'resolving', playing: false, message: gatewayRetry ? '音乐连接暂时中断，正在自动重试…' : this.failures.length ? '正在尝试下一个音源…' : '' })
     try {
       const data = await this.request('/resolve', { method: 'POST', body: { song, quality: music.get().quality, exclude: this.failures }, signal: this.abort.signal })
       if (generation !== this.generation) return
@@ -79,6 +79,12 @@ export class MusicController {
       if (this.desired) { this.watchdog(); await this.resume() }
     } catch (e) {
       if (generation !== this.generation) return
+      // JSON errors already exhausted enabled sources. Retry only a gateway
+      // interruption once; never loop or undo the user's pause.
+      if (!gatewayRetry && this.desired && e.gateway && e.retryable) {
+        music.set({ message: '音乐连接暂时中断，正在自动重试…' })
+        return this.resolve(song, generation, seek, true)
+      }
       this.clearTimer(); this.desired = false
       music.set({ status: 'error', playing: false, message: e.name === 'AbortError' ? '音源请求超时，请重试或切换平台' : e.message })
     }

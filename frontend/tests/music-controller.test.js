@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { MusicController } from '../src/music/controller.js'
 import { music } from '../src/music/store.js'
+import { MusicApiError } from '../src/music/api.js'
 class AudioMock {
   constructor() { this.handlers = {}; this.duration = 60; this.currentTime = 0; this.attributes = {}; this.played = 0 }
   addEventListener(k, fn) { this.handlers[k] = fn }
@@ -48,4 +49,32 @@ test('autoplay denial pauses rather than changing source', async () => {
   let resolves = 0
   const c = new MusicController(a, async path => path.startsWith('/lyrics') ? {} : (resolves++, { url: '/audio', source_id: 1, source_name: 'one' }))
   await c.play(song(1)); assert.equal(music.get().status, 'paused'); assert.equal(resolves, 1); assert.equal(c.failures.length, 1); c.destroy()
+})
+
+test('playback retries a gateway failure once and then plays', async () => {
+  const a = new AudioMock(); let calls = 0
+  const c = new MusicController(a, async path => {
+    if (path.startsWith('/lyrics')) return {}
+    if (++calls === 1) throw new MusicApiError('gateway', 502, true)
+    return { url: '/audio', source_id: 1, source_name: 'one' }
+  })
+  await c.play(song(1)); assert.equal(calls, 2); assert.equal(a.played, 1); c.destroy()
+})
+
+test('persistent gateway failures stop at two, JSON exhausted sources are not retried', async () => {
+  for (const gateway of [true, false]) {
+    let calls = 0; const c = new MusicController(new AudioMock(), async path => {
+      if (path.startsWith('/lyrics')) return {}
+      calls++; throw new MusicApiError('failed', 502, gateway)
+    })
+    await c.play(song(1)); assert.equal(calls, gateway ? 2 : 1); assert.equal(music.get().status, 'error'); c.destroy()
+  }
+})
+
+test('pause during gateway failure prevents automatic retry', async () => {
+  let calls = 0; const c = new MusicController(new AudioMock(), async path => {
+    if (path.startsWith('/lyrics')) return {}
+    calls++; c.toggle(); throw new MusicApiError('failed', 502, true)
+  })
+  await c.play(song(1)); assert.equal(calls, 1); assert.equal(c.desired, false); c.destroy()
 })
