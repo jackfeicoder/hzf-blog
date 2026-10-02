@@ -1,0 +1,38 @@
+name: codeblog
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-jackfei}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      DATABASE_URL: sqlite:////data/blog.db
+      SENSENOVA_API_KEY: ${SENSENOVA_API_KEY:-}
+    volumes:
+      - blog-data:/data
+      - blog-uploads:/app/backend/uploads
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+volumes:
+  blog-data:
+  blog-uploads:
