@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.staticfiles import StaticFiles
 
+import music_models  # register cleanup tables
 import models  # noqa: F401  确保模型注册到 Base.metadata
 from auth import hash_password
 from database import Base, SessionLocal, engine
@@ -13,6 +14,7 @@ from routers import auth_router, comments, posts, users, upload, notifications, 
 from routers.chat import router as chat_router
 from routers.study import router as study_router, seed_bank
 from routers.media import router as media_router
+from routers.admin import router as admin_router
 
 DEFAULT_CATEGORIES = ["后端", "前端", "移动开发", "人工智能", "数据库", "运维", "算法", "生活随笔"]
 
@@ -74,6 +76,7 @@ app.include_router(notifications.router)
 app.include_router(visitors.router)
 app.include_router(study_router)
 app.include_router(media_router)
+app.include_router(admin_router)
 
 
 

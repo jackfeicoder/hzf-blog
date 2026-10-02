@@ -1,0 +1,30 @@
+.admin-page { max-width: 1160px; padding-bottom: 36px; }
+.admin-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px; margin-bottom: 16px; }
+.admin-header h1 { font-size: 26px; margin: 0 0 8px; }
+.admin-header p { margin: 0; line-height: 1.6; }
+.admin-tabs, .admin-toolbar, .admin-actions, .admin-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.admin-tabs { padding: 12px; margin-bottom: 16px; }
+.admin-toolbar { margin-bottom: 16px; }
+.admin-toolbar input, .admin-toolbar select { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); color: inherit; min-width: 160px; }
+.admin-toolbar input:not([type=month]) { flex: 1; }
+.admin-list { padding: 0 20px; }
+.admin-row { padding: 16px 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); }
+.admin-row:last-child { border-bottom: 0; }
+.admin-row-content { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.admin-row-content > a, .admin-row-content > span { font-weight: 600; }
+.admin-row-content small { display: block; color: var(--muted); margin-top: 6px; }
+.admin-row-content p { white-space: pre-wrap; margin: 0; }
+.admin-actions { flex-shrink: 0; }
+.admin-edit { padding: 24px; margin-bottom: 16px; }
+.admin-edit h2 { font-size: 20px; margin: 0 0 16px; }
+.admin-edit > label { display: grid; gap: 8px; margin-bottom: 14px; }
+.admin-edit > label input, .admin-edit textarea { padding: 10px; border: 1px solid var(--border); border-radius: 10px; width: 100%; background: var(--panel); color: inherit; }
+.admin-task-edit { background: var(--bg); padding: 16px; margin-top: 16px; border-radius: 12px; }
+.admin-task-edit label { display: inline-block; margin-right: 20px; margin-bottom: 12px; }
+.admin-task-edit textarea { display: block; margin-bottom: 12px; }
+.admin-edit details { margin-bottom: 14px; }
+.admin-edit summary { cursor: pointer; }
+.admin-pagination { justify-content: center; margin-top: 20px; }
+.admin-error { padding: 16px; color: #df3c33; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
+.admin-message { color: #228746; padding-left: 8px; }
+@media (max-width: 760px) { .admin-header { align-items: flex-start; flex-direction: column; } .admin-row { align-items: flex-start; flex-direction: column; } .admin-edit { padding: 18px; } .admin-toolbar > * { max-width: 100%; } }

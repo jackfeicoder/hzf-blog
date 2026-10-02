@@ -14,6 +14,7 @@ const ChatAI = lazy(() => import('./pages/ChatAI'))
 const Visitors = lazy(() => import('./pages/Visitors'))
 const Study = lazy(() => import('./pages/Study'))
 const Videos = lazy(() => import('./pages/Videos'))
+const Admin = lazy(() => import('./pages/Admin'))
 
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/ai" element={<ChatAI />} />
             <Route path="/visitors" element={<Visitors />} />
             <Route path="/videos" element={<Videos />} />
+            <Route path="/admin" element={<Admin />} />
             <Route path="/study" element={<Suspense fallback={<div className="container">正在加载学习打卡…</div>}><Study /></Suspense>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes></Suspense>
