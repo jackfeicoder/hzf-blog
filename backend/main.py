@@ -12,6 +12,7 @@ from database import Base, SessionLocal, engine
 from routers import auth_router, comments, posts, users, upload, notifications, visitors
 from routers.chat import router as chat_router
 from routers.study import router as study_router, seed_bank
+from routers.media import router as media_router
 
 DEFAULT_CATEGORIES = ["后端", "前端", "移动开发", "人工智能", "数据库", "运维", "算法", "生活随笔"]
 
@@ -72,6 +73,7 @@ app.include_router(upload.router)
 app.include_router(notifications.router)
 app.include_router(visitors.router)
 app.include_router(study_router)
+app.include_router(media_router)
 
 
 

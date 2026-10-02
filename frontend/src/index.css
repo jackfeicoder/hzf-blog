@@ -164,7 +164,7 @@ html.dark .topbar.is-scrolled {
 }
 .topbar-inner {
   height: 100%;
-  width: min(1180px, calc(100% - 28px));
+  width: min(1440px, calc(100% - 28px));
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -191,9 +191,10 @@ html.dark .topbar.is-scrolled {
   font-weight: 800;
   box-shadow: 0 4px 12px rgba(252, 85, 49, 0.35);
 }
-.nav-links { display: flex; gap: 4px; flex: 1; }
+.nav-links { display: flex; gap: 4px; flex: 1; min-width: 0; }
 .nav-links a {
-  padding: 8px 14px;
+  padding: 8px 10px;
+  white-space: nowrap;
   border-radius: 999px;
   color: var(--muted);
   font-size: 14px;
@@ -1452,6 +1453,9 @@ html.dark .alert {
 }
 
 /* ---- responsive ---- */
+@media (min-width: 769px) and (max-width: 1199px) {
+  .nav-links.desktop-only { display: none !important; }
+}
 @media (max-width: 1024px) {
   .home-grid { grid-template-columns: minmax(0, 1fr) 260px; }
   .side-left { display: none; }

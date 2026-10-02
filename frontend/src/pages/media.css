@@ -1,0 +1,42 @@
+.media-page { max-width: 1180px; margin: 28px auto; padding: 0 20px 72px; }
+.media-hero { padding: 30px; background: var(--hero-bg); display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.media-eyebrow { color: var(--primary); font-size: 12px; font-weight: 600; letter-spacing: 2px; margin-bottom: 10px; }
+.media-page h1 { margin: 0 0 10px; font-size: 30px; }
+.media-page h2 { font-size: 20px; margin: 0 0 12px; }
+.media-hero p,.media-empty p,.media-footnote { color: var(--muted); line-height: 1.7; }
+.media-hero p { margin: 0; }
+.media-feedback { min-height: 30px; padding: 7px 2px; color: var(--primary); font-size: 13px; }
+.media-error { padding: 14px; border: 1px solid var(--primary); border-radius: 12px; color: var(--primary); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.media-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; margin-bottom: 20px; }
+.media-toolbar > span { white-space: nowrap; color: var(--muted); font-size: 14px; }
+.media-search { display: flex; align-items: center; gap: 8px; width: min(100%, 360px); }
+.media-page input,.media-page textarea { width: 100%; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font: inherit; min-width: 0; }
+.media-page input:focus,.media-page textarea:focus { outline: 2px solid var(--primary); outline-offset: 2px; }
+.media-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.media-card { padding: 24px; display: flex; flex-direction: column; min-width: 0; }
+.media-card-head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.media-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; color: var(--primary); background: var(--primary-soft); flex-shrink: 0; }
+.media-host { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.media-card h2 { overflow-wrap: anywhere; line-height: 1.5; }
+.media-card h2 a { color: var(--text); }
+.media-card h2 a:hover { color: var(--primary); }
+.media-card p { color: var(--muted); font-size: 14px; line-height: 1.7; margin: 0 0 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.media-open { margin-top: auto; display: flex; justify-content: space-between; }
+.media-manage { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--border); margin-top: 18px; padding-top: 14px; }
+.media-manage > span { width: 100%; font-size: 13px; }
+.media-page .media-delete { color: var(--primary); }
+.media-editor { margin-top: 20px; padding: 24px; }
+.media-editor fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.media-editor label { display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.media-form-row { display: grid; grid-template-columns: 1fr 160px; gap: 18px; }
+.media-order small { color: var(--muted); font-size: 12px; }
+.media-actions { display: flex; gap: 10px; }
+.media-empty { text-align: center; padding: 56px 24px; }
+.media-empty-icon { display: block; font-size: 36px; margin-bottom: 20px; }
+.media-footnote { font-size: 12px; text-align: center; margin-top: 24px; }
+.media-skeleton { padding: 24px; min-height: 240px; }
+.media-skeleton div { background: var(--border); height: 16px; border-radius: 6px; margin: 16px 0; }
+.media-skeleton div:first-child { height: 40px; width: 40px; }
+.media-skeleton div:last-child { width: 65%; }
+@media (max-width: 1000px) { .media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .media-page { margin-top: 16px; padding: 0 12px 80px; } .media-grid { grid-template-columns: 1fr; } .media-hero { padding: 24px; align-items: flex-start; flex-direction: column; } .media-toolbar { align-items: flex-start; flex-direction: column; } .media-search { width: 100%; } .media-form-row { grid-template-columns: 1fr; } .media-page h1 { font-size: 26px; } }
