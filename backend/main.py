@@ -11,6 +11,7 @@ from auth import hash_password
 from database import Base, SessionLocal, engine
 from routers import auth_router, comments, posts, users, upload, notifications, visitors
 from routers.chat import router as chat_router
+from routers.study import router as study_router, seed_bank
 
 DEFAULT_CATEGORIES = ["后端", "前端", "移动开发", "人工智能", "数据库", "运维", "算法", "生活随笔"]
 
@@ -42,6 +43,11 @@ async def lifespan(app: FastAPI):
                 db.add(models.Category(name=name))
             db.commit()
             print(f"[init] 已创建 {len(DEFAULT_CATEGORIES)} 个默认分类")
+        seed_bank(db)
+        superadmin = db.query(models.User).filter_by(username="jackfei").first()
+        if superadmin and not superadmin.is_admin:
+            superadmin.is_admin = True
+            db.commit()
     yield
 
 
@@ -65,6 +71,7 @@ app.include_router(chat_router)
 app.include_router(upload.router)
 app.include_router(notifications.router)
 app.include_router(visitors.router)
+app.include_router(study_router)
 
 
 

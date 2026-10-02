@@ -44,6 +44,7 @@ const navItems = [
   { to: '/ai', label: '问 AI', icon: '🤖' },
   { to: '/visitors', label: '访客', icon: '👀' },
   { to: 'https://imagefree.net', label: '画图', icon: '🎨', external: true },
+  { to: '/study', label: '学习打卡', icon: '✅' },
 ]
 
 

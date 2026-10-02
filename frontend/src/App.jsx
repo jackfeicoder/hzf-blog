@@ -12,6 +12,7 @@ const Profile = lazy(() => import('./pages/Profile'))
 const Rank = lazy(() => import('./pages/Rank'))
 const ChatAI = lazy(() => import('./pages/ChatAI'))
 const Visitors = lazy(() => import('./pages/Visitors'))
+const Study = lazy(() => import('./pages/Study'))
 
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/rank" element={<Rank />} />
             <Route path="/ai" element={<ChatAI />} />
             <Route path="/visitors" element={<Visitors />} />
+            <Route path="/study" element={<Suspense fallback={<div className="container">正在加载学习打卡…</div>}><Study /></Suspense>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes></Suspense>
         </Layout>
