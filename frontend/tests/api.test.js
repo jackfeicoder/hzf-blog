@@ -116,3 +116,23 @@ test('GET timeout has actionable error without aborting mutations', async () => 
   await assert.rejects(api.me(), /加载超时/)
   await api.likePost(1)
 })
+
+test('own password change uses authenticated PUT without caching or storing passwords', async () => {
+  setToken('test-token')
+  const body = { current_password: 'fixture-old-password', new_password: 'fixture-new-password', confirm_password: 'fixture-new-password' }
+  await api.listPosts()
+  mock.method(globalThis, 'fetch', async (path, options) => {
+    calls.push({ path, options }); return new Response(null, { status: 204 })
+  })
+  assert.equal(await api.changePassword(body), null)
+  const last = calls.at(-1)
+  assert.equal(last.path, '/api/auth/password')
+  assert.equal(last.options.method, 'PUT')
+  assert.equal(last.options.headers.Authorization, 'Bearer test-token')
+  assert.deepEqual(JSON.parse(last.options.body), body)
+  assert.equal(api.peekPosts(), undefined)
+  for (const key of Object.keys(body)) {
+    assert.equal(localStorage.getItem(key), null)
+    assert.equal(sessionStorage.getItem(key), null)
+  }
+})

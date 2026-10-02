@@ -1,54 +1,57 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
 import PostCard from '../components/PostCard'
 import { UserAvatar } from '../components/Layout'
 import { formatNum } from '../format'
+import PasswordChange from '../components/PasswordChange'
 
 export default function Profile() {
   const { username } = useParams()
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
   const [profile, setProfile] = useState(null)
   const [tab, setTab] = useState('posts') // posts | favorites
   const [posts, setPosts] = useState([])
   const [total, setTotal] = useState(0)
   const [err, setErr] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [passwordOpen, setPasswordOpen] = useState(false)
+  const [notice, setNotice] = useState('')
   const avatarInputRef = useRef(null)
 
-  const loadProfile = async () => {
-    const p = await api.getUser(username)
-    setProfile(p)
-  }
-
-  const loadList = async () => {
-    if (tab === 'posts') {
-      const data = await api.listPosts({ author: username, page: 1, page_size: 20 })
-      setPosts(data.items)
-      setTotal(data.total)
-    } else {
-      const data = await api.userFavorites(username, 1)
-      setPosts(data.items)
-      setTotal(data.total)
-    }
-  }
-
   useEffect(() => {
+    let active = true
     setErr('')
-    loadProfile().catch((e) => setErr(e.message))
-  }, [username])
+    setProfile(null)
+    setPasswordOpen(false)
+    setNotice('')
+    api.getUser(username).then(p => {
+      if (!active) return
+      if (p.username !== username) { navigate(`/u/${encodeURIComponent(p.username)}`, { replace: true }); return }
+      setProfile(p)
+    }).catch(e => { if (active) setErr(e.message) })
+    return () => { active = false }
+  }, [username, navigate])
 
   useEffect(() => {
     if (!profile) return
-    loadList().catch((e) => setErr(e.message))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, tab])
+    let active = true
+    setPosts([]); setTotal(0)
+    const request = tab === 'posts'
+      ? api.listPosts({ author: profile.username, page: 1, page_size: 20 })
+      : api.userFavorites(profile.username, 1)
+    request.then(data => {
+      if (active) { setPosts(data.items); setTotal(data.total) }
+    }).catch(e => { if (active) setErr(e.message) })
+    return () => { active = false }
+  }, [profile?.username, tab, user?.id])
 
   if (err) return <div className="container empty">{err}</div>
   if (!profile) return <div className="container empty">加载中...</div>
 
-  const isMe = user?.username === profile.username
+  const isMe = user?.id === profile.id
 
   const onFollow = async () => {
     if (!user) return (window.location.href = '/login')
@@ -132,9 +135,9 @@ export default function Profile() {
         </div>
         <div className="profile-actions">
           {isMe ? (
-            <Link to="/write" className="btn primary">
+            <><button className="btn ghost" aria-expanded={passwordOpen} onClick={() => setPasswordOpen(!passwordOpen)}>修改密码</button><Link to="/write" className="btn primary">
               写文章
-            </Link>
+            </Link></>
           ) : (
             <button className={`btn ${profile.is_following ? 'ghost' : 'primary'}`} onClick={onFollow}>
               {profile.is_following ? '已关注' : '+ 关注'}
@@ -142,6 +145,11 @@ export default function Profile() {
           )}
         </div>
       </div>
+
+      {notice && <div className="panel password-notice" role="status">{notice} <Link to="/login">重新登录</Link></div>}
+      {isMe && passwordOpen && <PasswordChange key={profile.id} onClose={() => setPasswordOpen(false)} onSuccess={() => {
+        logout(); setPasswordOpen(false); setNotice('密码已修改，旧登录会话已失效。')
+      }} />}
 
       <div className="sort-tabs profile-tabs">
         <button className={tab === 'posts' ? 'active' : ''} onClick={() => setTab('posts')}>

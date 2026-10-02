@@ -11,7 +11,7 @@ const monthNow = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0
 
 export default function Admin() {
   const { user } = useAuth()
-  const allowed = user?.username === 'jackfei'
+  const allowed = user?.can_manage === true
   const [tab, setTab] = useState('posts')
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -91,10 +91,10 @@ export default function Admin() {
     else await load()
   }
   if (!user) return <div className="container empty">请先 <Link to="/login">登录</Link>。</div>
-  if (!allowed) return <div className="container empty">仅 jackfei 可进入管理后台。</div>
+  if (!allowed) return <div className="container empty">仅 管理员 可进入管理后台。</div>
 
   return <div className="container admin-page">
-    <header className="panel admin-header"><div><h1>管理后台</h1><p className="muted">jackfei · 全站内容管理。文章删除、用户删除与打卡重置需要验证你自己的密码。</p></div>
+    <header className="panel admin-header"><div><h1>管理后台</h1><p className="muted">管理员 · 全站内容管理。文章删除、用户删除与打卡重置需要验证你自己的密码。</p></div>
       <div className="admin-actions"><Link className="btn ghost" to="/videos">视频链接管理</Link><Link className="btn ghost" to="/study">公共题库管理</Link></div></header>
     <nav className="panel admin-tabs" aria-label="后台分类">{tabs.map(([key, label]) => <button className={`btn ${key === tab ? 'primary' : 'ghost'}`} key={key} onClick={() => changeTab(key)} disabled={busy}>{label}</button>)}</nav>
     {error && <div className="panel admin-error" role="alert">{error}<button className="btn ghost sm" disabled={loading || busy} onClick={() => tab === 'study' ? studyLoad() : load()}>重试</button></div>}
@@ -119,13 +119,13 @@ export default function Admin() {
         {loading ? <div className="empty">加载中…</div> : data.items.length === 0 ? <div className="empty">暂无数据</div> : data.items.map(row => <div className="admin-row" key={row.id}>
           <div className="admin-row-content">
             {tab === 'posts' && <><Link to={`/post/${row.id}`}>{row.title}</Link><small>{row.author.username} · {row.published ? '已发布' : '草稿'}</small></>}
-            {tab === 'users' && <><Link to={`/u/${encodeURIComponent(row.username)}`}>{row.nickname || row.username}</Link><small>@{row.username}{row.username === 'jackfei' ? ' · 超级管理员' : ''}</small></>}
+            {tab === 'users' && <><Link to={`/u/${encodeURIComponent(row.username)}`}>{row.nickname || row.username}</Link><small>@{row.username}{row.can_manage ? ' · 超级管理员' : ''}</small></>}
             {tab === 'categories' && <><span>{row.name}</span><small>{row.post_count} 篇文章（含草稿）</small></>}
             {tab === 'comments' && <><p>{row.content}</p><small>{row.author.username} · <Link to={`/post/${row.post_id}`}>文章 #{row.post_id}</Link></small></>}
           </div><div className="admin-actions">
             {tab === 'posts' ? <Link className="btn ghost sm" to={`/edit/${row.id}`}>编辑</Link> : <button className="btn ghost sm" disabled={busy} onClick={() => setEdit(tab === 'users' ? { id: row.id, nickname: row.nickname, bio: row.bio || '', avatar_url: row.avatar_url || '' } : tab === 'categories' ? { id: row.id, name: row.name } : { id: row.id, content: row.content })}>编辑</button>}
             {tab === 'users' && <button className="btn ghost sm" onClick={() => { changeTab('study'); setSelectedUser(String(row.id)) }}>打卡数据</button>}
-            {(tab !== 'users' || row.username !== 'jackfei') && <button className="btn danger sm" disabled={busy} onClick={() => {
+            {(tab !== 'users' || !row.can_manage) && <button className="btn danger sm" disabled={busy} onClick={() => {
               if (['posts', 'users'].includes(tab)) setDeleting({ kind: tab, id: row.id, title: row.title || row.username })
               else if (window.confirm(tab === 'categories' ? `删除分类“${row.name}”？文章会保留并变为未分类。` : '删除这条评论及其回复？')) mutate(() => tab === 'comments' ? api.deleteComment(row.id) : api.adminRequest(`/categories/${row.id}`, { method: 'DELETE' }))
             }}>删除</button>}
@@ -154,6 +154,6 @@ export default function Admin() {
           <button className="btn danger" disabled={busy} onClick={() => setDeleting({ kind: 'study', id: study.userId, title: users.find(u => String(u.id) === String(study.userId))?.username || `用户 #${study.userId}` })}>重置该用户全部打卡数据</button></section>
       </>}
     </>}
-    {deleting && <PasswordConfirm title={deleting.kind === 'study' ? '确认重置打卡数据' : deleting.kind === 'users' ? '确认删除用户' : '确认删除文章'} description={deleting.kind === 'users' ? `删除用户 ${deleting.title} 将同时删除其文章、评论、互动和全部打卡数据。此操作不可撤销，请输入 jackfei 自己的密码。` : deleting.kind === 'study' ? `重置 ${deleting.title} 的全部历史打卡和轮次进度，公共题库保留。请输入 jackfei 自己的密码。` : `删除《${deleting.title}》及关联评论、点赞、收藏。请输入 jackfei 自己的密码。`} onConfirm={remove} onCancel={() => setDeleting(null)} />}
+    {deleting && <PasswordConfirm title={deleting.kind === 'study' ? '确认重置打卡数据' : deleting.kind === 'users' ? '确认删除用户' : '确认删除文章'} description={deleting.kind === 'users' ? `删除用户 ${deleting.title} 将同时删除其文章、评论、互动和全部打卡数据。此操作不可撤销，请输入 管理员 自己的密码。` : deleting.kind === 'study' ? `重置 ${deleting.title} 的全部历史打卡和轮次进度，公共题库保留。请输入 管理员 自己的密码。` : `删除《${deleting.title}》及关联评论、点赞、收藏。请输入 管理员 自己的密码。`} onConfirm={remove} onCancel={() => setDeleting(null)} />}
   </div>
 }

@@ -36,6 +36,14 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="author")
+    password_state = relationship("PasswordState", uselist=False, cascade="all, delete-orphan")
+
+
+class PasswordState(Base):
+    """An additive table disables pre-upgrade tokens after a password change."""
+    __tablename__ = "account_password_state"
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    changed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class Category(Base):

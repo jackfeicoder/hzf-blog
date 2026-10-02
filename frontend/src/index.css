@@ -1254,6 +1254,16 @@ html.dark .alert {
 .auth-foot a { color: var(--primary); }
 
 /* ---- profile ---- */
+.profile-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.password-panel { padding: 24px; margin-bottom: 16px; }
+.password-panel h2 { margin: 0 0 8px; font-size: 20px; }
+.password-panel form { display: flex; flex-direction: column; gap: 10px; max-width: 480px; }
+.password-panel input { min-width: 0; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); font: inherit; }
+.password-panel label { font-weight: 600; margin-top: 6px; }
+.password-buttons { display: flex; gap: 10px; margin-top: 12px; }
+.password-notice { padding: 16px; margin-bottom: 16px; }
+.password-notice a { color: var(--primary); }
+.profile-info h1 { flex-wrap: wrap; }
 .profile-header {
   display: flex;
   gap: 20px;

@@ -11,7 +11,7 @@ function hostname(url) {
 
 export default function Videos() {
   const { user } = useAuth()
-  const isAdmin = user?.username === 'jackfei'
+  const isAdmin = user?.can_manage === true
   const [items, setItems] = useState(() => api.peekVideoLinks() || [])
   const [loading, setLoading] = useState(() => !api.peekVideoLinks())
   const [refreshing, setRefreshing] = useState(false)

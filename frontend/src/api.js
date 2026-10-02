@@ -124,6 +124,7 @@ export const api = {
     request('/api/auth/login', { method: 'POST', body: { username, password } }),
   me: () => request('/api/auth/me', { auth: true }),
   updateMe: (data) => request('/api/auth/me', { method: 'PUT', body: data, auth: true }),
+  changePassword: (data) => request('/api/auth/password', { method: 'PUT', body: data, auth: true }),
 
   // 文章
   listPosts: (params = {}) => params.author ? request(postsPath(params)) : cached(postsPath(params)),

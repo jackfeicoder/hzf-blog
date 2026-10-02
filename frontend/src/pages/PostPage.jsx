@@ -104,7 +104,7 @@ export default function PostPage() {
   if (err) return <div className="container empty">{err}</div>
   if (!post) return <div className="container empty">加载中...</div>
 
-  const isOwner = user && (user.id === post.author.id || user.username === 'jackfei')
+  const isOwner = user && (user.id === post.author.id || user.can_manage === true)
 
   const onLike = async () => {
     if (!user) return nav('/login')
@@ -319,7 +319,7 @@ export default function PostPage() {
               <div className="muted">@{post.author.username}</div>
             </div>
           </Link>
-          {user && user.username !== post.author.username && (
+          {user && user.id !== post.author.id && (
             <button className={`btn ${following ? 'ghost' : 'primary'} block`} onClick={onFollow}>
               {following ? '已关注' : '+ 关注'}
             </button>

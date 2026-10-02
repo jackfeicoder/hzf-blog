@@ -129,6 +129,7 @@ def delete_user(user_id: int, body: schemas.PostDeleteIn, db: Session = Depends(
     clear_study(db, user.id)
     from music_models import clear_music
     clear_music(db, user.id)
+    db.query(models.PasswordState).filter_by(user_id=user.id).delete(synchronize_session=False)
     db.query(models.User).filter_by(id=user.id).delete(synchronize_session=False)
     db.commit()
     return {"ok": True}

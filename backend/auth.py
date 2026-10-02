@@ -1,4 +1,6 @@
 import os
+import hashlib
+import hmac
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -68,6 +70,7 @@ def create_access_token(username: str, user=None) -> str:
     if user is not None:
         payload["uid"] = user.id
         payload["account_created"] = user.created_at.isoformat()
+        payload["pwd"] = password_token_tag(user)
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -77,6 +80,11 @@ def token_matches_account(payload, user):
     if "uid" in payload and payload["uid"] != user.id:
         return False
     if "account_created" in payload and payload["account_created"] != user.created_at.isoformat():
+        return False
+    if "pwd" in payload:
+        if not isinstance(payload["pwd"], str) or not hmac.compare_digest(payload["pwd"].encode(), password_token_tag(user).encode()):
+            return False
+    elif user.password_state is not None:
         return False
     # Legacy tokens used a fixed 30-day expiry. Reject an old account's token
     # when its username is later reused, without logging out existing accounts.
@@ -124,5 +132,30 @@ def get_current_user_optional(
 
 def require_superadmin(user=Depends(get_current_user)):
     if not is_superadmin(user):
-        raise HTTPException(403, "仅 jackfei 可以使用管理功能")
+        raise HTTPException(403, "仅管理员可以使用管理功能")
     return user
+
+
+def password_token_tag(user):
+    return hmac.new(SECRET_KEY.encode(), user.password_hash.encode(), hashlib.sha256).hexdigest()
+
+
+_security_attempts = {}
+_security_lock = threading.Lock()
+
+
+def consume_security_attempt(key, limit=5):
+    """Bounded, per-account/IP throttling for the deployed single worker."""
+    now = time.monotonic()
+    with _security_lock:
+        for expired in [k for k, (start, _) in _security_attempts.items() if now - start >= 300]:
+            _security_attempts.pop(expired, None)
+        started, count = _security_attempts.get(key, (now, 0))
+        if count >= limit or (key not in _security_attempts and len(_security_attempts) >= 4096):
+            raise HTTPException(429, "尝试次数过多，请 5 分钟后再试", headers={"Retry-After": str(max(1, int(300 - (now - started))))})
+        _security_attempts[key] = (started, count + 1)
+
+
+def clear_security_attempt(key):
+    with _security_lock:
+        _security_attempts.pop(key, None)

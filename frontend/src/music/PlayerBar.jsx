@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { music, useMusic, useMusicProgress } from './store'
-import { formatTime, songKey } from './logic'
+import { formatTime, songKey, isLyricsTap } from './logic'
+import { musicDisplayName } from './labels'
 export function Progress() {
   const { time, duration } = useMusicProgress()
   return <div className="music-progress"><span>{formatTime(time)}</span><input type="range" aria-label="播放进度" min="0" max={duration || 1} step="0.1" value={Math.min(time, duration || 0)} disabled={!duration} onChange={e => music.controller?.seek(Number(e.target.value))} /><span>{formatTime(duration)}</span></div>
@@ -35,11 +36,18 @@ export function Volume({ label = '音量' }) {
 }
 export default function PlayerBar() {
   const s = useMusic(), [queue, setQueue] = useState(false)
+  const navigate = useNavigate(), location = useLocation()
+  useEffect(() => { if (location.pathname !== '/music') music.set({ lyricsOpen: false }) }, [location.pathname])
+  const openLyrics = e => {
+    if (!isLyricsTap(e, window.matchMedia('(max-width: 900px)').matches)) return
+    e.preventDefault(); setQueue(false); music.set({ lyricsOpen: true })
+    if (location.pathname !== '/music') navigate('/music')
+  }
   const liked = s.library.find(l => l.kind === 'favorites')?.songs.some(song => songKey(song) === songKey(s.current))
   useEffect(() => { document.body.classList.toggle('has-music-player', !!s.current); return () => document.body.classList.remove('has-music-player') }, [!!s.current])
   if (!s.current) return null
-  return <><div className="music-player-bar">
-    <div className="music-now"><Link to="/music" className="music-mini-cover" aria-label="返回音乐播放器">♫</Link><div><Link to="/music" className="music-title">{s.current.name}</Link><small>{s.current.singer || '未知歌手'} · {s.sourceName || (s.status === 'resolving' ? '正在换源' : '待播放')}</small></div><button disabled={s.libraryLoading} aria-label={liked ? '取消喜欢' : '喜欢当前歌曲'} onClick={() => music.controller?.favorite(s.current)} className={liked ? 'is-liked' : ''}>{liked ? '♥' : '♡'}</button></div>
+  return <><div className="music-player-bar" onClickCapture={openLyrics}>
+    <div className="music-now"><Link to="/music" className="music-mini-cover" aria-label="返回音乐播放器">♫</Link><div><Link to="/music" className="music-title">{s.current.name}</Link><small>{s.current.singer || '未知歌手'} · {musicDisplayName(s.sourceName) || (s.status === 'resolving' ? '正在换源' : '待播放')}</small></div><button disabled={s.libraryLoading} aria-label={liked ? '取消喜欢' : '喜欢当前歌曲'} onClick={() => music.controller?.favorite(s.current)} className={liked ? 'is-liked' : ''}>{liked ? '♥' : '♡'}</button></div>
     <div className="music-transport"><Controls /><Progress /></div>
     <div className="music-extras"><PlaybackSettings onOpen={() => setQueue(false)} /><Volume /><button className={queue ? 'active' : ''} onClick={() => setQueue(!queue)} aria-expanded={queue}>≋ 播放队列 <span className="music-queue-count">{s.queue.length}</span></button></div>
   </div>{queue && <aside className="music-queue-popover panel"><div className="music-section-head"><h3>播放队列 · {s.queue.length}</h3><button onClick={() => music.controller?.clearQueue()}>清空</button><button aria-label="关闭队列" onClick={() => setQueue(false)}>✕</button></div><div className="music-queue-items">{s.queue.map(song => <div key={songKey(song)} className="music-queue-row"><button onClick={() => music.controller?.play(song)}>{song.name}<small>{song.singer}</small></button><button aria-label={`移除${song.name}`} onClick={() => music.controller?.removeQueue(song)}>✕</button></div>)}</div></aside>}</>

@@ -45,7 +45,7 @@ class MusicTests(unittest.TestCase):
     def test_empty_recommendation_read_does_not_create_private_library(self):
         response = self.client.get('/api/music/recommended')
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {'name': 'jackfei的歌单', 'owner': 'jackfei', 'songs': []})
+        self.assertEqual(response.json(), {'name': '管理员的歌单', 'owner': 'administrator', 'songs': []})
         self.assertEqual(response.headers['cache-control'], 'no-store')
         with self.session() as db:
             self.assertEqual(db.query(MusicList).count(), 0)
@@ -66,7 +66,7 @@ class MusicTests(unittest.TestCase):
             self.client.put(f'/api/music/lists/{own}/songs', headers=self.headers(who), json={**self.song, 'id': who, 'name': '别人的收藏'})
         for who in (None, 'alice', 'jackfei', 'other-admin'):
             response = self.client.get('/api/music/recommended', headers=self.headers(who) if who else {})
-            self.assertEqual(response.json(), {'name': 'jackfei的歌单', 'owner': 'jackfei', 'songs': [self.song]})
+            self.assertEqual(response.json(), {'name': '管理员的歌单', 'owner': 'administrator', 'songs': [self.song]})
             self.assertNotIn('list_id', response.text)
         for who, code in ((None, 401), ('alice', 404), ('other-admin', 404)):
             for method in ('PUT', 'DELETE'):
@@ -123,9 +123,30 @@ class MusicTests(unittest.TestCase):
             self.assertEqual(self.client.post('/api/music/sources', json=body, headers=self.headers(who) if who else {}).status_code, code)
         row = self.client.post('/api/music/sources', json=body, headers=self.headers('jackfei')).json()
         self.assertNotIn('script', row)
-        self.assertNotIn('TOKEN', self.client.get('/api/music/sources').text)
+        self.assertNotIn('TOKEN', self.client.get('/api/music/sources', headers=self.headers('jackfei')).text)
         self.assertEqual(self.client.put(f"/api/music/sources/{row['id']}", headers=self.headers('jackfei'), json={'enabled': True, 'position': 0}).status_code, 409)
         self.assertEqual(self.client.post('/api/music/sources', json=body, headers=self.headers('jackfei')).status_code, 409)
+
+    def test_source_metadata_and_all_management_actions_are_jackfei_only(self):
+        j = self.headers('jackfei')
+        row = self.client.post('/api/music/sources', json={'name': 'Private source', 'script': '// PRIVATE_SCRIPT_TOKEN'}, headers=j).json()
+        endpoints = [('GET', '/api/music/sources', None), ('POST', '/api/music/sources', {'name': 'hidden', 'script': '// private script'}),
+                     ('PUT', f"/api/music/sources/{row['id']}", {'enabled': False, 'position': 0}),
+                     ('DELETE', f"/api/music/sources/{row['id']}", None), ('POST', f"/api/music/sources/{row['id']}/test", None)]
+        for who, code in ((None, 401), ('alice', 403), ('bob', 403), ('other-admin', 403)):
+            for method, path, body in endpoints:
+                with self.subTest(who=who, method=method):
+                    response = self.client.request(method, path, headers=self.headers(who) if who else {}, **({'json': body} if body else {}))
+                    self.assertEqual(response.status_code, code)
+                    self.assertNotIn('Private source', response.text)
+                    self.assertNotIn('PRIVATE_SCRIPT_TOKEN', response.text)
+        with self.session() as db:
+            owner = db.query(User).filter_by(username='jackfei').one(); owner.is_admin = False; db.commit()
+        response = self.client.get('/api/music/sources', headers=j)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['cache-control'], 'private, no-store')
+        self.assertEqual(len(response.json()), 1)
+        self.assertNotIn('script', response.json()[0])
 
     def test_resolver_fallback_and_opaque_ticket(self):
         with self.session() as db:
@@ -181,6 +202,49 @@ class MusicTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()['items'][0]['duration'], 60)
         self.assertEqual(r.json()['items'][0]['pic_id'], '456')
+
+    def test_native_platform_search_ids_pagination_and_cache(self):
+        fixtures = {
+            'tx': {'code': 0, 'req': {'code': 0, 'data': {'body': {'song': {'list': [dict(mid='qq_mid', name='QQ歌', singer=[{'name': '歌手'}], album={'name': '专辑', 'mid': 'album_mid'}, interval=180)]}}}}},
+            'kw': {'abslist': [dict(MUSICRID='MUSIC_123', SONGNAME='A &amp; B', ARTIST='歌手', ALBUM='专辑', DURATION='180')]},
+            'kg': {'error_code': 0, 'data': {'lists': [dict(FileHash='hash123', OriSongName='酷狗歌', SingerName='歌手', Duration=180)]}},
+            'mg': {'code': '000000', 'songResultData': {'resultList': [[dict(copyrightId='copyright123', name='咪咕歌', singers=[{'name': '歌手'}], albums=[{'name': '专辑'}])]]}},
+        }
+        for source, payload in fixtures.items():
+            with self.subTest(source=source), patch.object(music, 'upstream', AsyncMock(return_value=payload)) as upstream:
+                path = f'/api/music/search?q=test&source={source}&page=2'
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200, response.text)
+                song = response.json()['items'][0]
+                self.assertEqual(song['source'], source)
+                self.assertEqual(response.json()['page'], 2)
+                self.assertNotIn('gdstudio', upstream.call_args.args[0])
+                cached = self.client.get(path)
+                self.assertEqual(cached.json(), response.json())
+                self.assertEqual(cached.headers['cache-control'], 'public, max-age=60')
+                self.assertEqual(upstream.await_count, 1)
+                if source == 'mg': self.assertEqual(song['id'], 'copyright123')
+                if source == 'kg': self.assertEqual(song['id'], 'hash123')
+                if source == 'kw': self.assertEqual(song['name'], 'A & B')
+                if source == 'tx': self.assertEqual(song['id'], 'qq_mid')
+
+    def test_bad_platform_responses_are_json_errors_and_never_cached(self):
+        for source in ('tx', 'kw', 'kg', 'mg'):
+            for payload in ('<!DOCTYPE html>', {'code': 403}, None):
+                with self.subTest(source=source, payload=payload), patch.object(music, 'upstream', AsyncMock(return_value=payload)):
+                    response = self.client.get(f'/api/music/search?q=test&source={source}')
+                    self.assertEqual(response.status_code, 502)
+                    self.assertIn('切换平台', response.json()['detail'])
+                    self.assertEqual(response.headers['cache-control'], 'no-store')
+                    self.assertNotIn(('search', 'test', source, 1), music.CACHE)
+
+    def test_public_ipv4_preferred_but_every_dns_address_still_validated(self):
+        answers = [(2, 1, 6, '', ('8.8.8.8', 80)), (10, 1, 6, '', ('2606:4700:4700::1111', 80))]
+        with patch('music_http.socket.getaddrinfo', return_value=answers):
+            self.assertEqual(target('http://example.com')[2][0], '8.8.8.8')
+        answers.append((10, 1, 6, '', ('::1', 80)))
+        with patch('music_http.socket.getaddrinfo', return_value=answers), self.assertRaises(ValueError):
+            target('http://example.com')
 
     def test_cover_accepts_real_provider_jpg_mime_and_caches(self):
         from unittest.mock import Mock

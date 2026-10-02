@@ -25,6 +25,8 @@ def target(url):
     addresses = sorted({r[4][0] for r in socket.getaddrinfo(p.hostname, port, type=socket.SOCK_STREAM)})
     if not addresses or any(not ipaddress.ip_address(ip).is_global or ipaddress.ip_address(ip).is_multicast or ipaddress.ip_address(ip).is_reserved for ip in addresses):
         raise ValueError('目标地址被限制')
+    # Prefer routable IPv4 on IPv4-only hosts, AFTER validating all DNS answers.
+    addresses.sort(key=lambda ip: ipaddress.ip_address(ip).version)
     return p, port, addresses
 
 

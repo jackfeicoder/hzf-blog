@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../AuthContext'
 import { musicApi } from './api'
-const platforms = { wy: '网易云', tx: 'QQ', kw: '酷我', kg: '酷狗', mg: '咪咕' }
+import { MUSIC_PLATFORMS as platforms, canManageMusicSources, musicDisplayName } from './labels'
 export default function Sources() {
-  const { user } = useAuth(), admin = user?.username === 'jackfei'
+  const { user } = useAuth()
+  return canManageMusicSources(user) ? <SourceManager /> : null
+}
+function SourceManager() {
+  const { user } = useAuth(), admin = canManageMusicSources(user)
   const [rows, setRows] = useState([]), [busy, setBusy] = useState(''), [error, setError] = useState(''), [name, setName] = useState(''), [file, setFile] = useState(null)
   const controller = useRef(null), mounted = useRef(true), actor = useRef(user?.id)
   actor.current = user?.id
-  const load = async () => { controller.current?.abort(); controller.current = new AbortController(); try { const result = await musicApi('/sources', { signal: controller.current.signal }); if (mounted.current) setRows(result) } catch (e) { if (mounted.current && e.name !== 'AbortError') setError(e.message) } }
+  const load = async () => { controller.current?.abort(); controller.current = new AbortController(); try { const result = await musicApi('/sources', { signal: controller.current.signal }); if (mounted.current) setRows(result.map(row => ({ ...row, name: musicDisplayName(row.name), status: musicDisplayName(row.status) }))) } catch (e) { if (mounted.current && e.name !== 'AbortError') setError(e.message) } }
   useEffect(() => { mounted.current = true; load(); return () => { mounted.current = false; controller.current?.abort() } }, [])
   const action = async (key, fn) => {
     if (busy) return

@@ -9,7 +9,8 @@ from auth import get_current_user_optional
 from database import get_db
 import models
 import schemas
-from schemas import UserBrief
+from schemas import PublicUserBrief as UserBrief
+from public_identity import public_name, ADMIN_LOGIN, ADMIN_ALIAS
 
 
 router = APIRouter(prefix="/api/visitors", tags=["visitors"])
@@ -130,9 +131,9 @@ def get_visitors(
         if is_guest:
             disp_name = f"游客 ({log.ip})"
         else:
-            disp_name = log.user.nickname or log.user.username if log.user else f"游客 ({log.ip})"
+            disp_name = public_name(log.user) if log.user else f"游客 ({log.ip})"
 
-        user_brief = schemas.UserBrief.model_validate(log.user) if log.user else None
+        user_brief = UserBrief.model_validate(log.user) if log.user else None
 
         items.append(
             VisitorItemOut(
@@ -140,7 +141,7 @@ def get_visitors(
                 ip=log.ip,
                 display_name=disp_name,
                 is_guest=is_guest,
-                path=log.path,
+                path=log.path.replace(f"/u/{ADMIN_LOGIN}", f"/u/{ADMIN_ALIAS}"),
                 user_agent=log.user_agent,
                 created_at=log.created_at,
                 user=user_brief,

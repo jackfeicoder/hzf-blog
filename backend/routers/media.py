@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/media/videos", tags=["media"])
 
 def video_admin(user=Depends(get_current_user)):
     if user.username != "jackfei":
-        raise HTTPException(403, "仅 jackfei 可以管理视频链接")
+        raise HTTPException(403, "仅管理员可以管理视频链接")
     return user
 
 

@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from auth import hash_password
 from database import Base, get_db
 from models import Post, User
-from routers import auth_router, posts, study, comments, media, admin, music
+from routers import auth_router, posts, study, comments, media, admin, music, users
 from media_models import VideoLink
 from study_models import StudyItem
 from music_models import MusicList, MusicEntry
@@ -51,6 +51,7 @@ def database_override():
 app = FastAPI()
 app.dependency_overrides[get_db] = database_override
 app.include_router(auth_router.router)
+app.include_router(users.router)
 app.include_router(posts.router)
 app.include_router(study.router)
 app.include_router(comments.router)
@@ -74,6 +75,14 @@ tone_bytes = buffer.getvalue()
 async def fixture_upstream(url, options=None):
     from urllib.parse import urlsplit, parse_qs
     q = parse_qs(urlsplit(url).query)
+    if 'u.y.qq.com' in url:
+        return {'code': 0, 'req': {'code': 0, 'data': {'body': {'song': {'list': [dict(mid='qq1', name='QQ · 测试音频', singer=[{'name': '本地测试音频'}], album={'name': '交互测试'}, interval=60)]}}}}}
+    if 'search.kuwo.cn' in url:
+        return {'abslist': [dict(MUSICRID='MUSIC_1', SONGNAME='酷我 · 测试音频', ARTIST='本地测试音频', DURATION=60)]}
+    if 'songsearch.kugou.com' in url:
+        return {'error_code': 0, 'data': {'lists': [dict(FileHash='hash1', OriSongName='酷狗 · 测试音频', SingerName='本地测试音频', Duration=60)]}}
+    if 'app.c.nf.migu.cn' in url:
+        return {'code': '000000', 'songResultData': {'resultList': [[dict(copyrightId='copyright1', name='咪咕 · 测试音频', singers=[{'name': '本地测试音频'}])]]}}
     if q.get('types') == ['search']:
         return [dict(id=str(i), name=name, artist=['本地测试音频'], album='交互测试', pic_id='', lyric_id=str(i)) for i, name in enumerate(['晴天 · 测试音频', '代码与旋律', '慢慢听'], 1)]
     if q.get('types') == ['lyric']:

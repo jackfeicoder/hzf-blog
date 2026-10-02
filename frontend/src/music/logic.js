@@ -31,3 +31,8 @@ export function addToQueue(queue, song, current, next = false) {
   else copy.push(song)
   return copy
 }
+// Links/text/blank space open lyrics. Native controls keep their own actions.
+export function isLyricsTap(event, mobile) {
+  return mobile && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey
+    && !event.target.closest('button, input, select, textarea, label, [role="button"]')
+}

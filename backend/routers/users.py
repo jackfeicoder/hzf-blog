@@ -8,12 +8,13 @@ import models
 import schemas
 from auth import get_current_user, get_current_user_optional
 from database import get_db
+from public_identity import internal_username
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 def _get_user_or_404(db: Session, username: str) -> models.User:
-    user = db.query(models.User).filter(models.User.username == username).first()
+    user = db.query(models.User).filter(models.User.username == internal_username(username)).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
     return user
@@ -78,7 +79,7 @@ def toggle_follow(
     return schemas.ToggleOut(active=active, count=count)
 
 
-@router.get("/{username}/following", response_model=list[schemas.UserBrief])
+@router.get("/{username}/following", response_model=list[schemas.PublicUserBrief])
 def following(username: str, db: Session = Depends(get_db)):
     user = _get_user_or_404(db, username)
     rows = (
@@ -90,7 +91,7 @@ def following(username: str, db: Session = Depends(get_db)):
     return rows
 
 
-@router.get("/{username}/followers", response_model=list[schemas.UserBrief])
+@router.get("/{username}/followers", response_model=list[schemas.PublicUserBrief])
 def followers(username: str, db: Session = Depends(get_db)):
     user = _get_user_or_404(db, username)
     rows = (

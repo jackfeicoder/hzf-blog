@@ -42,6 +42,18 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
+  useEffect(() => {
+    const sync = event => {
+      if (event.key !== 'blog_token' && event.key !== null) return
+      if (!getToken()) { setUser(null); return }
+      api.me().then(setUser).catch(error => {
+        if (error.status === 401) { clearToken(); setUser(null) }
+      })
+    }
+    window.addEventListener('storage', sync)
+    return () => window.removeEventListener('storage', sync)
+  }, [])
+
   return (
     <AuthContext.Provider value={{ user, loading, login, register, logout, setUser }}>
       {children}

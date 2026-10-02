@@ -10,6 +10,7 @@ import models
 import schemas
 from auth import get_current_user, get_current_user_optional, is_superadmin, verify_delete_password
 from database import get_db
+from public_identity import internal_username
 
 router = APIRouter(prefix="/api", tags=["posts"])
 
@@ -90,6 +91,7 @@ def list_posts(
     user: Optional[models.User] = Depends(get_current_user_optional),
 ):
     if author:
+        author = internal_username(author)
         response.headers["Cache-Control"] = "private, no-store"
     q = db.query(models.Post)
     if author:
@@ -151,7 +153,7 @@ def top_authors(limit: int = Query(8, ge=1, le=30), db: Session = Depends(get_db
     )
     return [
         schemas.AuthorRankItem(
-            user=schemas.UserBrief.model_validate(u),
+            user=schemas.PublicUserBrief.model_validate(u),
             post_count=pc,
             total_views=tv,
             total_likes=tl,

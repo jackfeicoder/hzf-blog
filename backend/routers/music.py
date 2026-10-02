@@ -18,6 +18,7 @@ from auth import get_current_user, require_superadmin
 from database import get_db
 from music_models import MusicEntry, MusicList, MusicSource
 from music_http import fetch, open_http, target
+from music_search import platform_search
 from music_worker import run_source
 from models import User
 
@@ -100,34 +101,42 @@ async def search(request: Request, response: Response, q: str = Query(min_length
     key = ('search', q.strip(), source, page)
     result = cached(key)
     if result is not None:
+        response.headers['Cache-Control'] = 'public, max-age=60'
         return result
     try:
-        try:
-            data = await upstream(GD + '?' + urlencode(dict(types='search', source=PLATFORMS[source], name=q.strip(), count=20, pages=page)))
-        except Exception:
+        async with asyncio.timeout(10):
             if source != 'wy':
-                raise
-            payload = await upstream('https://music.163.com/api/search/get?' + urlencode(dict(s=q.strip(), type=1, limit=20, offset=(page - 1) * 20)))
-            data = [dict(id=row['id'], name=row['name'], artist=[a['name'] for a in row.get('artists', [])],
-                         album=row.get('album', {}).get('name', ''), lyric_id=row['id'],
-                         pic_id=str(row.get('album', {}).get('picId') or ''), duration=row.get('duration', 0) / 1000)
-                    for row in payload.get('result', {}).get('songs', [])]
+                data = await platform_search(upstream, source, q.strip(), page)
+            else:
+                try:
+                    data = await upstream(GD + '?' + urlencode(dict(types='search', source=PLATFORMS[source], name=q.strip(), count=20, pages=page)))
+                    if not isinstance(data, list):
+                        raise ValueError('搜索格式异常')
+                except Exception:
+                    payload = await upstream('https://music.163.com/api/search/get?' + urlencode(dict(s=q.strip(), type=1, limit=20, offset=(page - 1) * 20)))
+                    data = [dict(id=row['id'], name=row['name'], artist=[a['name'] for a in row.get('artists', [])],
+                                 album=row.get('album', {}).get('name', ''), lyric_id=row['id'],
+                                 pic_id=str(row.get('album', {}).get('picId') or ''), duration=row.get('duration', 0) / 1000)
+                            for row in payload.get('result', {}).get('songs', [])]
         if not isinstance(data, list):
             raise ValueError('搜索格式异常')
         items = []
         for row in data[:20]:
+            if not isinstance(row, dict):
+                continue
             try:
                 artist = row.get('artist', [])
                 song = Song(source=source, id=str(row.get('id', '')), name=row.get('name', ''),
                             singer=' / '.join(artist) if isinstance(artist, list) else str(artist),
                             album=row.get('album', ''), pic_id=str(row.get('pic_id') or ''), lyric_id=str(row.get('lyric_id') or ''), duration=row.get('duration', 0))
-                items.append(song.model_dump())
+                if not any(item['id'] == song.id for item in items):
+                    items.append(song.model_dump())
             except (ValueError, TypeError):
                 continue
         response.headers['Cache-Control'] = 'public, max-age=60'
         return remember(key, dict(items=items, page=page, has_more=len(data) == 20))
     except Exception:
-        raise HTTPException(502, '搜索音源暂时没有响应，请切换平台或稍后重试')
+        raise HTTPException(502, '该平台搜索暂时没有响应，请切换平台或稍后重试', headers={'Cache-Control': 'no-store'})
 
 
 @router.get('/lyrics')
@@ -202,8 +211,8 @@ def source_out(row):
 
 
 @router.get('/sources')
-def sources(response: Response, db: Session = Depends(get_db)):
-    response.headers['Cache-Control'] = 'no-store'
+def sources(response: Response, db: Session = Depends(get_db), user=Depends(require_superadmin)):
+    private(response)
     return [source_out(s) for s in db.query(MusicSource).order_by(MusicSource.position, MusicSource.id).all()]
 
 
@@ -412,7 +421,7 @@ def recommended(response: Response, db: Session = Depends(get_db)):
         song = Song.model_validate_json(row.song)
         if song.key not in seen:
             songs.append(song.model_dump()); seen.add(song.key)
-    return {'name': 'jackfei的歌单', 'owner': 'jackfei', 'songs': songs}
+    return {'name': '管理员的歌单', 'owner': 'administrator', 'songs': songs}
 
 
 class ListName(BaseModel):

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from auth import get_current_user
 from database import get_db
 import models
-from schemas import UserBrief
+from schemas import PublicUserBrief as UserBrief
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 

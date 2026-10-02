@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from public_identity import ADMIN_ALIAS, ADMIN_LOGIN, ADMIN_LABEL, public_reference
 
 
 # ---------- 用户 ----------
@@ -10,10 +11,26 @@ class RegisterIn(BaseModel):
     password: str = Field(min_length=6, max_length=100)
     nickname: str = Field(default="", max_length=50)
 
+    @field_validator("username")
+    @classmethod
+    def reserved_username(cls, value):
+        if value.strip().casefold() in (ADMIN_ALIAS, ADMIN_LABEL, ADMIN_LOGIN):
+            raise ValueError("该用户名为系统保留名称")
+        if len(value.strip()) < 2:
+            raise ValueError("用户名至少 2 个字符")
+        return value.strip()
+
 
 class LoginIn(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=50)
+    password: SecretStr = Field(max_length=100)
+
+
+class PasswordChangeIn(BaseModel):
+    current_password: SecretStr
+    new_password: SecretStr
+    confirm_password: SecretStr
+    model_config = {"extra": "forbid"}
 
 
 class TokenOut(BaseModel):
@@ -34,9 +51,38 @@ class UserOut(UserBrief):
     bio: str
     is_admin: bool
     created_at: datetime
+    can_manage: bool = False
+    public_username: str = ""
+
+    @model_validator(mode="after")
+    def capabilities(self):
+        self.can_manage = self.username == ADMIN_LOGIN
+        self.public_username = ADMIN_ALIAS if self.can_manage else self.username
+        return self
 
 
-class UserProfile(UserOut):
+class PublicUserBrief(UserBrief):
+    @model_validator(mode="after")
+    def public_identity(self):
+        if self.username == ADMIN_LOGIN:
+            self.username = ADMIN_ALIAS
+            self.nickname = ADMIN_LABEL
+        return self
+
+
+class PublicUserOut(PublicUserBrief):
+    bio: str
+    is_admin: bool
+    created_at: datetime
+
+    @model_validator(mode="after")
+    def public_bio(self):
+        if self.username == ADMIN_ALIAS:
+            self.bio = public_reference(self.bio)
+        return self
+
+
+class UserProfile(PublicUserOut):
     """个人主页：带统计"""
 
     post_count: int = 0
@@ -143,7 +189,7 @@ class PostListItem(BaseModel):
     favorite_count: int
     comment_count: int
     created_at: datetime
-    author: UserBrief
+    author: PublicUserBrief
     category: Optional[CategoryOut] = None
     tags: list[TagOut] = []
 
@@ -183,14 +229,19 @@ class CommentOut(BaseModel):
     reply_to: str
     content: str
     created_at: datetime
-    author: UserBrief
+    author: PublicUserBrief
+
+    @field_validator("reply_to")
+    @classmethod
+    def public_reply(cls, value):
+        return public_reference(value)
 
     model_config = {"from_attributes": True}
 
 
 # ---------- 排行榜 ----------
 class AuthorRankItem(BaseModel):
-    user: UserBrief
+    user: PublicUserBrief
     post_count: int
     total_views: int
     total_likes: int

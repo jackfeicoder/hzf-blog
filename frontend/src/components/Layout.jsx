@@ -127,7 +127,7 @@ export default function Layout({ children }) {
     }
   }, [menuOpen])
 
-  const links = navItems.filter((i) => (!i.auth || user) && (!i.admin || user?.username === 'jackfei'))
+  const links = navItems.filter((i) => (!i.auth || user) && (!i.admin || user?.can_manage === true))
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
 
   return (
@@ -225,7 +225,7 @@ export default function Layout({ children }) {
                 <Link to="/write" className="btn primary sm desktop-only write-btn">
                   写文章
                 </Link>
-                <Link to={`/u/${user.username}`} className="user-chip">
+                <Link to={`/u/${user.public_username || user.username}`} className="user-chip">
                   <UserAvatar user={user} size="sm" />
                   <span className="desktop-only">{user.nickname || user.username}</span>
                 </Link>
@@ -270,7 +270,7 @@ export default function Layout({ children }) {
           </button>
         </div>
         {user ? (
-          <Link to={`/u/${user.username}`} className="drawer-user" onClick={() => setMenuOpen(false)}>
+          <Link to={`/u/${user.public_username || user.username}`} className="drawer-user" onClick={() => setMenuOpen(false)}>
             <span className="avatar lg">{avatarText(user.nickname || user.username)}</span>
             <div>
               <div className="name">{user.nickname || user.username}</div>
@@ -295,7 +295,7 @@ export default function Layout({ children }) {
             </NavLink>
           ))}
           {user && (
-            <NavLink to={`/u/${user.username}`} onClick={() => setMenuOpen(false)}>
+            <NavLink to={`/u/${user.public_username || user.username}`} onClick={() => setMenuOpen(false)}>
               <span className="nav-ico">👤</span>
               我的主页
             </NavLink>
@@ -336,7 +336,7 @@ export default function Layout({ children }) {
           <span className="write-fab">＋</span>
           写作
         </NavLink>
-        <NavLink to={user ? `/u/${user.username}` : '/login'}>
+        <NavLink to={user ? `/u/${user.public_username || user.username}` : '/login'}>
           <span>👤</span>
           我的
         </NavLink>
