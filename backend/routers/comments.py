@@ -3,15 +3,16 @@ from sqlalchemy.orm import Session
 
 import models
 import schemas
-from auth import get_current_user
+from auth import get_current_user, get_current_user_optional, is_superadmin
 from database import get_db
 
 router = APIRouter(prefix="/api", tags=["comments"])
 
 
 @router.get("/posts/{post_id}/comments", response_model=list[schemas.CommentOut])
-def list_comments(post_id: int, db: Session = Depends(get_db)):
-    if not db.get(models.Post, post_id):
+def list_comments(post_id: int, db: Session = Depends(get_db), user=Depends(get_current_user_optional)):
+    post = db.get(models.Post, post_id)
+    if not post or (not post.published and not (user and (post.user_id == user.id or is_superadmin(user)))):
         raise HTTPException(status_code=404, detail="文章不存在")
     return (
         db.query(models.Comment)
@@ -31,6 +32,8 @@ def create_comment(
     post = db.get(models.Post, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="文章不存在")
+    if not post.published and post.user_id != current.id and not is_superadmin(current):
+        raise HTTPException(404, "文章不存在")
     parent_id = None
     if data.parent_id:
         parent = db.get(models.Comment, data.parent_id)
@@ -82,7 +85,7 @@ def delete_comment(
     if not comment:
         raise HTTPException(status_code=404, detail="评论不存在")
     post = db.get(models.Post, comment.post_id)
-    allowed = current.is_admin or comment.user_id == current.id or (post and post.user_id == current.id)
+    allowed = is_superadmin(current) or comment.user_id == current.id or (post and post.user_id == current.id)
     if not allowed:
         raise HTTPException(status_code=403, detail="无权删除此评论")
     # 删除顶层评论时连同回复一起删

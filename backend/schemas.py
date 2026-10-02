@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 
 # ---------- 用户 ----------
@@ -118,6 +118,12 @@ class PostIn(BaseModel):
         if not v or not v.strip():
             raise ValueError("正文不能为空")
         return v
+
+
+class PostDeleteIn(BaseModel):
+    password: SecretStr = Field(min_length=1, max_length=100)
+
+    model_config = {"extra": "forbid"}
 
 
 class TagOut(BaseModel):

@@ -1,14 +1,14 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from routers.visitors import record_visit
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 import models
 import schemas
-from auth import get_current_user, get_current_user_optional
+from auth import get_current_user, get_current_user_optional, is_superadmin, verify_delete_password
 from database import get_db
 
 router = APIRouter(prefix="/api", tags=["posts"])
@@ -78,6 +78,7 @@ def list_categories(db: Session = Depends(get_db)):
 # ---------- 文章列表 ----------
 @router.get("/posts", response_model=schemas.PostPage)
 def list_posts(
+    response: Response,
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=50),
     category_id: Optional[int] = None,
@@ -88,6 +89,8 @@ def list_posts(
     db: Session = Depends(get_db),
     user: Optional[models.User] = Depends(get_current_user_optional),
 ):
+    if author:
+        response.headers["Cache-Control"] = "private, no-store"
     q = db.query(models.Post)
     if author:
         q = q.join(models.User, models.Post.user_id == models.User.id).filter(
@@ -106,9 +109,9 @@ def list_posts(
         like = f"%{search}%"
         q = q.filter(or_(models.Post.title.like(like), models.Post.content.like(like)))
 
-    total = q.count()
+    total = q.with_entities(func.count(models.Post.id)).order_by(None).scalar() or 0
     order = HOT_SCORE.desc() if sort == "hot" else models.Post.created_at.desc()
-    posts = q.order_by(order).offset((page - 1) * page_size).limit(page_size).all()
+    posts = q.options(defer(models.Post.content)).order_by(order).offset((page - 1) * page_size).limit(page_size).all()
     return schemas.PostPage(items=posts, total=total, page=page, page_size=page_size)
 
 
@@ -117,6 +120,7 @@ def list_posts(
 def hot_posts(limit: int = Query(10, ge=1, le=30), db: Session = Depends(get_db)):
     return (
         db.query(models.Post)
+        .options(defer(models.Post.content))
         .filter(models.Post.published == True)  # noqa: E712
         .order_by(HOT_SCORE.desc(), models.Post.created_at.desc())
         .limit(limit)
@@ -182,6 +186,7 @@ def create_post(
 def get_post(
     post_id: int,
     request: Request,
+    response: Response,
     inc_view: bool = True,
     db: Session = Depends(get_db),
     user: Optional[models.User] = Depends(get_current_user_optional),
@@ -189,8 +194,9 @@ def get_post(
     post = db.get(models.Post, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="文章不存在")
-    if not post.published and not (user and (user.id == post.user_id or user.is_admin)):
+    if not post.published and not (user and (user.id == post.user_id or is_superadmin(user))):
         raise HTTPException(status_code=404, detail="文章不存在")
+    response.headers["Cache-Control"] = "private, no-store"
     if inc_view:
         post.views += 1
         record_visit(request, db, user, path=f"/post/{post_id}")
@@ -210,7 +216,7 @@ def update_post(
     post = db.get(models.Post, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="文章不存在")
-    if post.user_id != current.id and not current.is_admin:
+    if post.user_id != current.id and not is_superadmin(current):
         raise HTTPException(status_code=403, detail="无权修改此文章")
     post.title = data.title
     post.content = data.content
@@ -226,17 +232,28 @@ def update_post(
 @router.delete("/posts/{post_id}")
 def delete_post(
     post_id: int,
+    data: schemas.PostDeleteIn,
     current: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     post = db.get(models.Post, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="文章不存在")
-    if post.user_id != current.id and not current.is_admin:
+    if post.user_id != current.id and not is_superadmin(current):
         raise HTTPException(status_code=403, detail="无权删除此文章")
-    db.delete(post)
+    verify_delete_password(current, data.password.get_secret_value())
+    remove_post(db, post)
     db.commit()
     return {"ok": True}
+
+
+def remove_post(db, post):
+    # Explicit cleanup also works on older SQLite databases without FK enforcement.
+    for model in (models.Like, models.Favorite):
+        db.query(model).filter_by(post_id=post.id).delete(synchronize_session=False)
+    db.query(models.Notification).filter_by(post_id=post.id).update({"post_id": None}, synchronize_session=False)
+    db.delete(post)
+    db.flush()
 
 
 def _notify(db: Session, user_id: int, sender_id: int, type_str: str, post_id: int = None, content: str = ""):

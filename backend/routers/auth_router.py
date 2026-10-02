@@ -20,7 +20,7 @@ def register(data: schemas.RegisterIn, db: Session = Depends(get_db)):
     )
     db.add(user)
     db.commit()
-    return schemas.TokenOut(access_token=create_access_token(user.username))
+    return schemas.TokenOut(access_token=create_access_token(user.username, user))
 
 
 @router.post("/login", response_model=schemas.TokenOut)
@@ -28,7 +28,7 @@ def login(data: schemas.LoginIn, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == data.username).first()
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    return schemas.TokenOut(access_token=create_access_token(user.username))
+    return schemas.TokenOut(access_token=create_access_token(user.username, user))
 
 
 @router.get("/me", response_model=schemas.UserOut)

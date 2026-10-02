@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
 import { UserAvatar } from '../components/Layout'
+import PasswordConfirm from '../components/PasswordConfirm'
 import { bindCodeCopy, formatNum, renderMarkdown, timeAgo } from '../utils'
 
 export default function PostPage() {
@@ -15,28 +16,30 @@ export default function PostPage() {
   const [content, setContent] = useState('')
   const [replyTo, setReplyTo] = useState(null)
   const [err, setErr] = useState('')
+  const [commentsError, setCommentsError] = useState('')
   const [following, setFollowing] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [toc, setToc] = useState([])
   const [activeTocId, setActiveTocId] = useState('')
   const mdRef = useRef(null)
 
-  const load = async () => {
-    const p = await api.getPost(id)
-    setPost(p)
-    const cs = await api.listComments(id)
-    setComments(cs)
-    if (user && p.author.username !== user.username) {
-      try {
-        const profile = await api.getUser(p.author.username)
-        setFollowing(profile.is_following)
-      } catch { /* ignore */ }
-    }
-  }
-
   useEffect(() => {
-    load().catch((e) => setErr(e.message))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let active = true
+    setPost(null); setComments([]); setErr(''); setCommentsError(''); setFollowing(false); setDeleteOpen(false)
+    api.getPost(id).then(async p => {
+      if (!active) return
+      setPost(p)
+      if (user && p.author.username !== user.username) {
+        try {
+          const profile = await api.getUser(p.author.username)
+          if (active) setFollowing(profile.is_following)
+        } catch { /* author status must not hide the article */ }
+      }
+    }).catch(e => { if (active) setErr(e.message) })
+    api.listComments(id).then(cs => { if (active) setComments(cs) })
+      .catch(() => { if (active) setCommentsError('评论加载失败，请稍后重试') })
+    return () => { active = false }
   }, [id, user?.id])
 
   const html = useMemo(() => renderMarkdown(post?.content || ''), [post?.content])
@@ -101,7 +104,7 @@ export default function PostPage() {
   if (err) return <div className="container empty">{err}</div>
   if (!post) return <div className="container empty">加载中...</div>
 
-  const isOwner = user && (user.id === post.author.id || user.is_admin)
+  const isOwner = user && (user.id === post.author.id || user.username === 'jackfei')
 
   const onLike = async () => {
     if (!user) return nav('/login')
@@ -118,9 +121,8 @@ export default function PostPage() {
     const r = await api.followUser(post.author.username)
     setFollowing(r.active)
   }
-  const onDelete = async () => {
-    if (!confirm('确认删除这篇文章？')) return
-    await api.deletePost(post.id)
+  const onDelete = async (password) => {
+    await api.deletePost(post.id, password)
     nav('/')
   }
   const onSubmitComment = async (e) => {
@@ -162,6 +164,8 @@ export default function PostPage() {
 
   return (
     <div className="container post-layout">
+      {deleteOpen && <PasswordConfirm description={`将删除《${post.title}》及关联评论、点赞、收藏。请输入你自己的密码。`}
+        onConfirm={onDelete} onCancel={() => setDeleteOpen(false)} />}
       <article className="post-main panel">
         <h1 className="post-title">{post.title}</h1>
         <div className="post-meta">
@@ -184,7 +188,7 @@ export default function PostPage() {
           {isOwner && (
             <span className="owner-actions">
               <Link to={`/edit/${post.id}`} className="btn ghost sm">编辑</Link>
-              <button className="btn danger sm" onClick={onDelete}>删除</button>
+              <button className="btn danger sm" onClick={() => setDeleteOpen(true)}>删除</button>
             </span>
           )}
         </div>
@@ -215,6 +219,7 @@ export default function PostPage() {
 
         <section className="comments">
           <h3>评论 {comments.length}</h3>
+          {commentsError && <div role="alert">{commentsError}<button className="btn ghost sm" onClick={() => api.listComments(id).then(cs => { setComments(cs); setCommentsError('') }).catch(() => {})}>重试</button></div>}
           <form className="comment-form" onSubmit={onSubmitComment}>
             {replyTo && (
               <div className="reply-tip">
@@ -300,7 +305,7 @@ export default function PostPage() {
                 )}
               </div>
             ))}
-            {tree.length === 0 && <div className="empty sm">还没有评论，来抢沙发吧</div>}
+            {tree.length === 0 && !commentsError && <div className="empty sm">还没有评论，来抢沙发吧</div>}
           </div>
         </section>
       </article>

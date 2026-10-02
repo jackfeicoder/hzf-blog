@@ -2,7 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 import models
 import schemas
@@ -116,6 +116,6 @@ def favorites(
         .filter(models.Favorite.user_id == user.id, models.Post.published == True)  # noqa: E712
         .order_by(models.Favorite.created_at.desc())
     )
-    total = q.count()
-    items = q.offset((page - 1) * page_size).limit(page_size).all()
+    total = q.with_entities(func.count(models.Post.id)).order_by(None).scalar() or 0
+    items = q.options(defer(models.Post.content)).offset((page - 1) * page_size).limit(page_size).all()
     return schemas.PostPage(items=items, total=total, page=page, page_size=page_size)
