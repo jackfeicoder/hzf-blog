@@ -1,6 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { MUSIC_PLATFORMS, canManageMusicSources, musicDisplayName } from '../src/music/labels.js'
+import { MUSIC_PLATFORMS, MUSIC_DEFAULT_SOURCE, MUSIC_DEFAULT_QUALITY, canManageMusicSources, musicDisplayName } from '../src/music/labels.js'
+import { music } from '../src/music/store.js'
+
+test('verified platform and standard quality are the default without changing IDs', () => {
+  assert.equal(MUSIC_DEFAULT_SOURCE, 'kg')
+  assert.equal(MUSIC_PLATFORMS[MUSIC_DEFAULT_SOURCE], '小狗')
+  assert.equal(MUSIC_DEFAULT_QUALITY, '128k')
+  assert.equal(music.get().quality, MUSIC_DEFAULT_QUALITY)
+})
 
 test('platform aliases preserve existing song identifiers', () => {
   assert.deepEqual(MUSIC_PLATFORMS, { wy: '小云', tx: '小Q', kw: '小酷', kg: '小狗', mg: '小咪' })

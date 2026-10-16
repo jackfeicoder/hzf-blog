@@ -25,6 +25,18 @@ export function nextIndex(queue, current, mode, direction = 1, ended = false, ra
   }
   return (index + direction + queue.length) % queue.length
 }
+// Failure recovery ignores repeat-one and never revisits a failed song this round.
+export function nextUnfailedIndex(queue, current, failed, mode = 'sequence', random = Math.random) {
+  const choices = queue.map((song, i) => i).filter(i => !failed.has(songKey(queue[i])))
+  if (!choices.length) return -1
+  if (mode === 'shuffle') return choices[Math.min(choices.length - 1, Math.floor(random() * choices.length))]
+  const currentIndex = queue.findIndex(song => songKey(song) === songKey(current))
+  for (let step = 1; step <= queue.length; step++) {
+    const index = (currentIndex + step) % queue.length
+    if (!failed.has(songKey(queue[index]))) return index
+  }
+  return -1
+}
 export function addToQueue(queue, song, current, next = false) {
   const copy = queue.filter(s => songKey(s) !== songKey(song))
   if (next) copy.splice(Math.max(0, copy.findIndex(s => songKey(s) === songKey(current)) + 1), 0, song)

@@ -36,7 +36,7 @@ input.on('line', async line => {
       },
     }
     const context = vm.createContext({ lx, Buffer, setTimeout, clearTimeout, setInterval, clearInterval,
-      console: { log() {}, error() {}, warn() {}, info() {}, debug() {} }, URL, URLSearchParams, TextEncoder, TextDecoder })
+      console: Object.fromEntries(['log', 'error', 'warn', 'info', 'debug', 'group', 'groupEnd', 'groupCollapsed', 'time', 'timeEnd', 'timeLog', 'trace', 'table', 'assert', 'dir', 'dirxml', 'count', 'countReset', 'clear'].map(name => [name, () => {}])), URL, URLSearchParams, TextEncoder, TextDecoder })
     vm.runInContext(data.script, context, { timeout: 1500 })
     const start = Date.now()
     while (!capabilities && Date.now() - start < 5000) await new Promise(r => setTimeout(r, 20))

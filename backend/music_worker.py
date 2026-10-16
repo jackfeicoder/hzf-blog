@@ -1,4 +1,4 @@
-"""One disposable, offline non-root container at a time; HTTP via checked bridge."""
+"""At most two disposable offline non-root containers; HTTP via checked bridge."""
 import asyncio
 import json
 import os
@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from music_http import fetch
 
-GATE = asyncio.Semaphore(1)
+GATE = asyncio.Semaphore(2)
 IMAGE = 'hzf-music-node:20261002'
 RUNTIME = Path(__file__).with_name('music_runtime.cjs')
 

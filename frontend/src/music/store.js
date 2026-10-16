@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react'
+import { MUSIC_DEFAULT_QUALITY } from './labels.js'
 const listeners = new Set(), progressListeners = new Set()
 const guestLists = () => [{ id: 'favorites', kind: 'favorites', name: '我喜欢', songs: [] }, { id: 'history', kind: 'history', name: '最近播放', songs: [] }]
 let state = { current: null, queue: [], library: guestLists(), actor: null, libraryLoading: false, status: 'idle', playing: false,
-  message: '', sourceName: '', mode: 'sequence', quality: '128k', volume: 0.7, lyrics: [], translation: [], lyricsLoading: false, lyricsOpen: false }
-let progress = { time: 0, duration: 0 }
+  message: '', sourceName: '', playbackSong: null, activeQuality: null, mode: 'sequence', quality: MUSIC_DEFAULT_QUALITY, volume: 0.7, lyrics: [], translation: [], lyricsLoading: false, lyricsOpen: false }
+let progress = { time: 0, duration: 0, buffered: [] }
 export const music = {
   controller: null,
   get: () => state,

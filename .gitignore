@@ -23,6 +23,10 @@ frontend/.vite/
 .env.*
 !.env.example
 backend/.env
+backend/r2-images.env
+backend/sensenova.env
+backend/.runtime/
+backend/.music-cache/
 
 # IDE / OS
 .idea/

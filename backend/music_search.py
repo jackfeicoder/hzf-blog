@@ -18,6 +18,14 @@ def rows(payload, *path):
 
 
 async def platform_search(upstream, source, query, page):
+    if source == 'wy':
+        payload = await upstream('https://music.163.com/api/search/get?' + urlencode(dict(s=query, type=1, limit=20, offset=(page - 1) * 20)))
+        raw = rows(payload, 'result', 'songs')
+        return [dict(id=r.get('id', ''), name=r.get('name', ''),
+                     artist=[a.get('name', '') for a in r.get('artists', []) if isinstance(a, dict)],
+                     album=r.get('album', {}).get('name', ''), lyric_id=r.get('id', ''),
+                     pic_id=str(r.get('album', {}).get('picId') or ''), duration=(r.get('duration') or 0) / 1000)
+                for r in raw if isinstance(r, dict)]
     if source == 'tx':
         request = {'comm': {'ct': 19, 'cv': 1845}, 'req': {
             'module': 'music.search.SearchCgiService', 'method': 'DoSearchForQQMusicDesktop',

@@ -31,7 +31,14 @@ export async function musicApi(path, { method = 'GET', body, signal, timeout = 3
       if (e.name === 'AbortError') throw e
       throw new MusicApiError(response.ok ? '音乐接口响应异常，请刷新重试' : `音乐服务暂时没有响应（${response.status}），请稍后重试或切换平台`, response.status, true)
     }
-    if (!response.ok) throw new MusicApiError(typeof data?.detail === 'string' ? data.detail : '操作失败，请重试', response.status)
+    if (!response.ok) {
+      const detail = data?.detail
+      const error = new MusicApiError(typeof detail === 'string' ? detail : detail?.message || '操作失败，请重试', response.status)
+      error.attempted = Array.isArray(detail?.attempted) ? detail.attempted : []
+      error.continuation = detail?.continue === true
+      error.cooldown = detail?.cooldown === true
+      throw error
+    }
     return data
   } catch (e) {
     if (!signal?.aborted && (timedOut || e instanceof TypeError)) e.retryable = true

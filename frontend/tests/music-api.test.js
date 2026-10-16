@@ -45,3 +45,8 @@ test('network failure and timer timeout are retryable, user cancellation is not'
   const controller = new AbortController(); controller.abort()
   await assert.rejects(musicApi('/search', { signal: controller.signal }), e => e.name === 'AbortError' && !e.retryable)
 })
+
+test('temporary source cooling is preserved separately from exhausted song errors', async t => {
+  t.mock.method(globalThis, 'fetch', async () => Response.json({detail:{message:'音源冷却中',cooldown:true}}, {status:503}))
+  await assert.rejects(musicApi('/resolve'), e => e.cooldown === true && e.status === 503)
+})

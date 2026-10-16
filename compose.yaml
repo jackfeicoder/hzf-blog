@@ -10,9 +10,17 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
       DATABASE_URL: sqlite:////data/blog.db
       SENSENOVA_API_KEY: ${SENSENOVA_API_KEY:-}
+      IMAGE_STORAGE: ${IMAGE_STORAGE:-local}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
     volumes:
       - blog-data:/data
       - blog-uploads:/app/backend/uploads
+      - blog-music:/app/backend/.music-cache
+      - blog-runtime:/app/backend/.runtime
     expose:
       - "8000"
     healthcheck:
@@ -36,3 +44,5 @@ services:
 volumes:
   blog-data:
   blog-uploads:
+  blog-music:
+  blog-runtime:

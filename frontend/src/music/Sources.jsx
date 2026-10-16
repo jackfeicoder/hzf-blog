@@ -4,7 +4,50 @@ import { musicApi } from './api'
 import { MUSIC_PLATFORMS as platforms, canManageMusicSources, musicDisplayName } from './labels'
 export default function Sources() {
   const { user } = useAuth()
-  return canManageMusicSources(user) ? <SourceManager /> : null
+  return canManageMusicSources(user) ? <><SourceManager /><FileCacheManager /><RoutingDiagnostics /></> : null
+}
+function FileCacheManager() {
+  const [data, setData] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState('')
+  const abort = useRef(null)
+  useEffect(() => () => abort.current?.abort(), [])
+  const load = async () => {
+    abort.current?.abort(); abort.current = new AbortController(); setBusy(true); setError('')
+    try { setData(await musicApi('/file-cache', { signal: abort.current.signal })) }
+    catch (e) { if (e.name !== 'AbortError') setError(e.message) }
+    finally { setBusy(false) }
+  }
+  const remove = async row => {
+    if (!window.confirm(`清除“${row.title}”的歌曲文件缓存？下次播放会重新尝试缓存，收藏不受影响。`)) return
+    setBusy(true); setError('')
+    try { await musicApi(`/file-cache/${row.id}`, { method: 'DELETE' }); await load() }
+    catch (e) { setError(e.message); setBusy(false) }
+  }
+  const size = value => `${(value / 1024**3).toFixed(2)} GB`
+  return <section className="music-routing-diagnostics"><div className="music-section-head"><div><h2>歌曲文件缓存</h2><p>全站复用 · 标准音质优先 · 完整缓存后支持本机分段播放</p></div><button onClick={load} disabled={busy}>{busy ? '读取中…' : '查看 / 刷新缓存'}</button></div>
+    {error && <div className="music-error" role="alert">{error}</div>}
+    {data && <><p>{data.count} 首 · 已用 {size(data.bytes)} / {size(data.maximum)} · 磁盘剩余 {size(data.free)}</p><p>{data.status} · 待处理 {data.pending} · 低于 {size(data.minimum_free)} 暂停新增；容量满后按最近使用淘汰，最近播放中的文件受保护。</p>
+      {data.items.map(row => <div className="music-source-row" key={row.id}><div><strong>{row.title}</strong><small>{row.singer} · {row.quality} · {(row.size / 1024**2).toFixed(1)} MB</small></div><button disabled={busy || row.pinned > Date.now()/1000} onClick={() => remove(row)}>{row.pinned > Date.now()/1000 ? '播放保护中' : '清除缓存'}</button></div>)}
+      {!data.items.length && <p>还没有完整缓存，实际播放后会在后台缓存。</p>}</>}
+  </section>
+}
+function RoutingDiagnostics() {
+  const [data, setData] = useState(null), [loading, setLoading] = useState(false), [error, setError] = useState('')
+  const abort = useRef(null)
+  const load = async () => {
+    abort.current?.abort(); abort.current = new AbortController(); setLoading(true); setError('')
+    try { setData(await musicApi('/diagnostics', { signal: abort.current.signal })) }
+    catch (e) { if (e.name !== 'AbortError') setError(e.message) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => () => abort.current?.abort(), [])
+  const stage = { resolved: '地址解析', resolve_error: '地址解析', stream_ready: '音频验证', stream_error: '音频传输', playing: '浏览器播放', playback_error: '播放中断' }
+  return <section className="music-routing-diagnostics"><div className="music-section-head"><div><h2>播放诊断</h2><p>成功路线长期记忆 · 分平台/音质自动优选 · 不改变手动排序和启停</p></div><button disabled={loading} onClick={load}>{loading ? '读取中…' : '查看 / 刷新日志'}</button></div>
+    {error && <div className="music-error" role="alert">{error}</div>}
+    {data && <><div className="music-source-row"><small>近 24 小时服务器实测统计；单首歌失败不会停用整个音源。日志不含播放地址、密钥或访客身份。</small></div>
+      {data.health.map(row => <div className="music-source-row" key={`${row.source_id}:${row.platform}:${row.quality}`}><strong>{musicDisplayName(row.source_name)} · {platforms[row.platform]} · {row.quality}</strong><small>音频验证 {row.verified} 次 · 失败 {row.failures} 次</small></div>)}
+      <div className="music-routing-events">{data.recent.slice(0, 30).map((row, i) => <div className="music-source-row" key={`${row.at}:${i}`}><div><strong>{row.title} <small>{row.singer}</small></strong><small>{musicDisplayName(row.source_name)} · {platforms[row.platform]} · {stage[row.stage] || row.stage} · {row.status === 'ok' ? '成功' : '失败'} {row.reason ? `(${row.reason})` : ''}</small></div><small>{new Date(row.at * 1000).toLocaleString()} · {row.elapsed_ms} ms</small></div>)}</div>
+      {!data.recent.length && <div className="music-empty">还没有新版本的播放日志，实际播放后会记录</div>}</>}
+  </section>
 }
 function SourceManager() {
   const { user } = useAuth(), admin = canManageMusicSources(user)

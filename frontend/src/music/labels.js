@@ -1,5 +1,7 @@
 // Presentation aliases only. Provider IDs and protocols remain unchanged.
 export const MUSIC_PLATFORMS = Object.freeze({ wy: '小云', tx: '小Q', kw: '小酷', kg: '小狗', mg: '小咪' })
+export const MUSIC_DEFAULT_SOURCE = 'kg'
+export const MUSIC_DEFAULT_QUALITY = '128k'
 export const canManageMusicSources = user => user?.can_manage === true
 
 const aliases = [

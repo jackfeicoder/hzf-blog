@@ -5,7 +5,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
     && groupadd --gid 10001 codeblog \
     && useradd --uid 10001 --gid codeblog --no-create-home codeblog \
-    && mkdir -p /data /app/backend/uploads \
+    && mkdir -p /data /app/backend/uploads /app/backend/.runtime /app/backend/.music-cache \
     && chown -R codeblog:codeblog /data /app/backend
 COPY --chown=codeblog:codeblog . .
 USER codeblog

@@ -13,13 +13,24 @@ from database import Base, get_db
 from models import User
 from music_models import MusicSource, MusicList, MusicEntry, clear_music
 from music_http import target
+from music_routing import RoutingStore
 from routers import music
 
 
 class MusicTests(unittest.TestCase):
     def setUp(self):
         music.CACHE.clear(); music.LIMITS.clear(); music.TICKETS.clear()
+        music.SOURCE_COOLING.clear()
         self.temp = tempfile.TemporaryDirectory()
+        from music_files import MusicFiles
+        files = MusicFiles(root=Path(self.temp.name) / 'audio', index=Path(self.temp.name) / 'files.sqlite3', enabled=False)
+        files_patch = patch.object(music, 'FILE_CACHE', files)
+        files_patch.start(); self.addCleanup(files_patch.stop); self.addCleanup(files.close)
+        from music_playback import AudioCache
+        cache_patch = patch.object(music, 'AUDIO_CACHE', AudioCache(path=Path(self.temp.name) / 'addresses.sqlite3'))
+        cache_patch.start(); self.addCleanup(cache_patch.stop)
+        routing_patch = patch.object(music, 'ROUTING', RoutingStore(Path(self.temp.name) / 'routing.sqlite3'))
+        routing_patch.start(); self.addCleanup(routing_patch.stop)
         self.engine = create_engine(f"sqlite:///{Path(self.temp.name) / 'music.db'}", connect_args={'check_same_thread': False})
         event.listen(self.engine, 'connect', lambda c, _: c.execute('PRAGMA foreign_keys=ON'))
         Base.metadata.create_all(self.engine)
@@ -164,7 +175,7 @@ class MusicTests(unittest.TestCase):
         self.assertEqual(self.client.get(result.json()['url'], headers={'Range': 'bytes=0-1,4-5'}).status_code, 416)
 
     def test_search_caches_but_private_data_never_does(self):
-        upstream = AsyncMock(return_value=[dict(id='1', name='测试', artist=['a'], album='b', pic_id='2', lyric_id='3')])
+        upstream = AsyncMock(return_value={'result':{'songs':[dict(id=1, name='测试', artists=[{'name':'a'}], album={'name':'b','picId':2})]}})
         with patch.object(music, 'upstream', upstream):
             r = self.client.get('/api/music/search?q=test')
             r2 = self.client.get('/api/music/search?q=test')
@@ -196,7 +207,7 @@ class MusicTests(unittest.TestCase):
         self.assertEqual(r.json(), second.json()); self.assertEqual(upstream.await_count, 1)
 
     def test_search_independent_platform_fallback(self):
-        upstream = AsyncMock(side_effect=[ValueError(), {'result': {'songs': [{'id': 123, 'name': 'Test', 'artists': [{'name': 'Singer'}], 'album': {'name': 'Album', 'picId': 456}, 'duration': 60000}]}}])
+        upstream = AsyncMock(side_effect=[ValueError(), [dict(id=123,name='Test',artist=['Singer'],album='Album',pic_id=456,duration=60)]])
         with patch.object(music, 'upstream', upstream):
             r = self.client.get('/api/music/search?q=test')
         self.assertEqual(r.status_code, 200)
@@ -205,6 +216,7 @@ class MusicTests(unittest.TestCase):
 
     def test_native_platform_search_ids_pagination_and_cache(self):
         fixtures = {
+            'wy': {'result': {'songs': [dict(id=123, name='测试歌', artists=[{'name':'歌手'}], album={'name':'专辑'}, duration=180000)]}},
             'tx': {'code': 0, 'req': {'code': 0, 'data': {'body': {'song': {'list': [dict(mid='qq_mid', name='QQ歌', singer=[{'name': '歌手'}], album={'name': '专辑', 'mid': 'album_mid'}, interval=180)]}}}}},
             'kw': {'abslist': [dict(MUSICRID='MUSIC_123', SONGNAME='A &amp; B', ARTIST='歌手', ALBUM='专辑', DURATION='180')]},
             'kg': {'error_code': 0, 'data': {'lists': [dict(FileHash='hash123', OriSongName='酷狗歌', SingerName='歌手', Duration=180)]}},
