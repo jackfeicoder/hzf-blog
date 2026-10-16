@@ -5,6 +5,7 @@ import { api } from '../api'
 import { useAppearance } from '../appearance/AppearanceContext'
 import AppearanceSettings from '../appearance/AppearanceSettings'
 import { visibleNavigation } from '../navigation'
+import NavigationLink from './NavigationLink.js'
 
 export function avatarText(name = '') {
   return (name || '?').slice(0, 1).toUpperCase()
@@ -149,9 +150,9 @@ export default function Layout({ children }) {
 
           <nav className="nav-links desktop-only">
             {links.filter(item => !item.menuOnly).map((item) => (
-              <NavLink key={item.to} to={item.to} end={item.end}>
+              <NavigationLink key={item.to} item={item}>
                 {item.label}
-              </NavLink>
+              </NavigationLink>
             ))}
           </nav>
 
@@ -280,10 +281,10 @@ export default function Layout({ children }) {
         )}
         <nav className="drawer-nav">
           {links.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} onClick={() => setMenuOpen(false)}>
+            <NavigationLink key={item.to} item={item} onClick={() => setMenuOpen(false)}>
               <span className="nav-ico">{item.icon}</span>
               {item.label}
-            </NavLink>
+            </NavigationLink>
           ))}
           {user && (
             <NavLink to={`/u/${user.public_username || user.username}`} onClick={() => setMenuOpen(false)}>
