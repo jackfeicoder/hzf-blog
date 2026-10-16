@@ -25,7 +25,18 @@ test('seek preview suspends watchdog without seeking; commit updates once and re
   c.previewSeek(true); c.watchdog(); assert.equal(c.timer, null); assert.equal(a.currentTime, 0)
   c.previewSeek(false); c.seek(40)
   assert.equal(a.currentTime, 40); assert.equal(c.recoveryStart, 40); assert.ok(c.timer)
+  assert.equal(music.getProgress().time, 40) // No timeupdate event needed to keep the thumb in place.
   c.seek(NaN); assert.equal(a.currentTime, 40)
+  c.destroy()
+})
+test('paused seeks synchronously replace stale progress, preserve pause and buffered data', () => {
+  const a = new AudioMock(), c = new MusicController(a, () => { throw new Error('unexpected resolve') })
+  music.progress({ time: 10, duration: a.duration, buffered: [[0, 50]] })
+  c.previewSeek(true); c.seek(45); c.previewSeek(false)
+  assert.equal(a.currentTime, 45); assert.equal(music.getProgress().time, 45)
+  assert.deepEqual(music.getProgress().buffered, [[0, 50]])
+  assert.equal(a.played, 0); assert.equal(c.timer, null)
+  c.seek(15); assert.equal(music.getProgress().time, 15)
   c.destroy()
 })
 test('playback settings select valid modes without resolving or restarting audio', () => {

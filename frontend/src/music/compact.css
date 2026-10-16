@@ -118,6 +118,8 @@
 .music-seek-buffer i{background:var(--muted);opacity:.4}
 .music-seek-buffer b{left:0;background:var(--primary)}
 .music-progress .music-seek-track input{position:relative;margin:0;height:24px;appearance:none;-webkit-appearance:none;background:transparent;touch-action:pan-y}
+.music-progress .music-seek-track input:focus{outline:none}
+.music-progress .music-seek-track input:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:12px}
 .music-seek-track input::-webkit-slider-runnable-track{height:4px;background:transparent}
 .music-seek-track input::-moz-range-track{height:4px;background:transparent}
 .music-seek-track input::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border-radius:50%;background:var(--primary);border:0;box-shadow:0 0 0 3px var(--primary-soft)}

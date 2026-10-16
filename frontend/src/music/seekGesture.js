@@ -8,6 +8,12 @@ export class SeekGesture {
     return value
   }
 }
+// Native range thumbs travel between their half-width inset, not the box edges.
+export function seekPosition(clientX, rect, duration, thumbWidth = 14) {
+  if (!Number.isFinite(clientX) || !Number.isFinite(duration) || duration <= 0 || rect.width <= thumbWidth) return null
+  const ratio = Math.min(1, Math.max(0, (clientX - rect.left - thumbWidth / 2) / (rect.width - thumbWidth)))
+  return Math.min(duration, Math.round(ratio * duration * 10) / 10)
+}
 export function bufferedRanges(audio) {
   const result = []
   if (!Number.isFinite(audio.duration) || audio.duration <= 0) return result

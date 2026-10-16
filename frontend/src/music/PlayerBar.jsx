@@ -6,27 +6,51 @@ import { formatTime, songKey, isLyricsTap } from './logic'
 import { musicDisplayName } from './labels'
 import CoverArt from './CoverArt'
 import { playerDock } from './playerDock'
-import { SeekGesture } from './seekGesture.js'
+import { SeekGesture, seekPosition } from './seekGesture.js'
+const SEEK_KEYS = ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown']
 export function Progress() {
   const { time, duration, buffered = [] } = useMusicProgress(), current = useMusic().current
-  const key = current ? songKey(current) : '', gesture = useRef(new SeekGesture()), [draft, setDraft] = useState(null)
-  useEffect(() => { gesture.current.finish('', false); setDraft(null) }, [key])
+  const key = current ? songKey(current) : '', gesture = useRef(new SeekGesture()), pointer = useRef(null), [draft, setDraft] = useState(null)
+  useEffect(() => {
+    gesture.current.finish('', false); pointer.current = null; setDraft(null)
+    return () => { gesture.current.finish('', false); pointer.current = null; music.controller?.previewSeek(false) }
+  }, [key])
   const finish = (commit = true) => {
     if (!gesture.current.active) return
     const value = gesture.current.finish(key, commit)
-    setDraft(null)
+    pointer.current = null
+    // Publish the new playhead before removing the preview, including while paused.
     if (value !== null) music.controller?.seek(value)
+    setDraft(null)
     music.controller?.previewSeek(false)
   }
   const begin = () => { gesture.current.begin(key, time); music.controller?.previewSeek(true) }
+  const previewPointer = e => {
+    const next = seekPosition(e.clientX, e.currentTarget.getBoundingClientRect(), duration)
+    if (next !== null) { gesture.current.update(key, next); setDraft(next) }
+  }
   const value = Math.min(draft ?? time, duration || 0), played = duration ? value / duration * 100 : 0
   return <div className="music-progress"><span>{formatTime(draft ?? time)}</span><div className="music-seek-track">
     <div className="music-seek-buffer" aria-hidden="true">{buffered.map(([start, end], i) => <i key={i} style={{ left: `${start}%`, width: `${Math.max(0, end-start)}%` }} />)}<b style={{ width: `${played}%` }} /></div>
     <input type="range" aria-label="播放进度" aria-valuetext={`${formatTime(value)} / ${formatTime(duration)}`} min="0" max={duration || 1} step="0.1" value={value} disabled={!duration}
-      onPointerDown={e => { begin(); e.currentTarget.setPointerCapture?.(e.pointerId) }} onPointerUp={() => finish()} onPointerCancel={() => finish(false)} onLostPointerCapture={() => finish(false)}
-      onKeyDown={e => { if (e.key === 'Escape') finish(false); else if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(e.key) && !gesture.current.active) begin() }}
-      onKeyUp={e => { if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(e.key)) finish() }} onBlur={() => finish()}
-      onChange={e => { const next = Number(e.target.value); if (gesture.current.active) { gesture.current.update(key, next); setDraft(next) } else music.controller?.seek(next) }} />
+      onPointerDown={e => {
+        if (e.button !== 0 || pointer.current !== null) return
+        // Own pointer seeking; mixing native range dragging with React's controlled
+        // value lets a late native change restore the old position after release.
+        e.preventDefault(); e.currentTarget.focus(); begin(); pointer.current = e.pointerId
+        previewPointer(e); e.currentTarget.setPointerCapture?.(e.pointerId)
+      }}
+      onPointerMove={e => { if (pointer.current === e.pointerId) previewPointer(e) }}
+      onPointerUp={e => { if (pointer.current === e.pointerId) { previewPointer(e); finish() } }}
+      onPointerCancel={e => { if (pointer.current === e.pointerId) finish(false) }}
+      onLostPointerCapture={e => { if (pointer.current === e.pointerId) finish(false) }}
+      onKeyDown={e => { if (e.key === 'Escape') finish(false); else if (SEEK_KEYS.includes(e.key) && !gesture.current.active) begin() }}
+      onKeyUp={e => { if (SEEK_KEYS.includes(e.key) && pointer.current === null) finish() }} onBlur={() => finish(pointer.current === null)}
+      onChange={e => {
+        if (pointer.current !== null) return
+        const next = Number(e.target.value)
+        if (gesture.current.active) { gesture.current.update(key, next); setDraft(next) } else music.controller?.seek(next)
+      }} />
   </div><span>{formatTime(duration)}</span></div>
 }
 export function Controls() {

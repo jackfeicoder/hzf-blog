@@ -187,6 +187,7 @@ export class MusicController {
     this.clearTimer()
     const position = Math.min(Math.max(0, time), this.audio.duration)
     this.lastPosition = position; this.recoveryStart = position; this.audio.currentTime = position
+    music.progress({ time: position })
     if (this.desired) this.watchdog()
   }
   volume(value) { const v = Math.min(1, Math.max(0, Number(value) || 0)); this.audio.volume = v; music.set({ volume: v }); try { localStorage.setItem('music-volume', v) } catch { /* optional */ } }

@@ -1,6 +1,26 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { SeekGesture, bufferedRanges } from '../src/music/seekGesture.js'
+import { SeekGesture, seekPosition, bufferedRanges } from '../src/music/seekGesture.js'
+
+test('pointer coordinates account for thumb inset and clamp outside the track', () => {
+  const rect = { left: 100, width: 214 }
+  assert.equal(seekPosition(107, rect, 60), 0)
+  assert.equal(seekPosition(207, rect, 60), 30)
+  assert.equal(seekPosition(307, rect, 60), 60)
+  assert.equal(seekPosition(-100, rect, 60), 0)
+  assert.equal(seekPosition(900, rect, 60), 60)
+  assert.equal(seekPosition(308, rect, 59.97), 59.97)
+  assert.equal(seekPosition(207, rect, Infinity), null)
+  assert.equal(seekPosition(207, { left: 100, width: 0 }, 60), null)
+})
+test('release coordinate is authoritative even when the last move event is missing', () => {
+  const gesture = new SeekGesture(), rect = { left: 0, width: 214 }
+  gesture.begin('song-a', 10)
+  gesture.update('song-a', seekPosition(107, rect, 60))
+  gesture.update('song-a', seekPosition(157, rect, 60))
+  assert.equal(gesture.finish('song-a'), 45)
+  assert.equal(gesture.finish('song-a', false), null) // lost capture after release
+})
 
 test('drag previews many positions and commits exactly once', () => {
   const gesture = new SeekGesture()
