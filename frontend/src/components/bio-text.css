@@ -1,0 +1,2 @@
+.bio { white-space: pre-wrap; overflow-wrap: anywhere; }
+.bio a,.welcome-author-bio a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }

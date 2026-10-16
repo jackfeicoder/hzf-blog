@@ -1,4 +1,5 @@
 import { QueryCache } from './queryCache.js'
+import { uploadImageFile } from './imageAssets.js'
 
 const TOKEN_KEY = 'blog_token'
 const publicCache = new QueryCache()
@@ -64,14 +65,14 @@ export const clearToken = () => {
   } catch { /* ignore */ }
 }
 
-async function request(path, { method = 'GET', body, auth = false } = {}) {
+async function request(path, { method = 'GET', body, auth = false, timeoutMs = method === 'GET' ? 15_000 : 0 } = {}) {
   const headers = { 'Content-Type': 'application/json' }
   if (auth || getToken()) {
     const token = getToken()
     if (token) headers.Authorization = `Bearer ${token}`
   }
-  const controller = method === 'GET' ? new AbortController() : null
-  const timer = controller ? setTimeout(() => controller.abort(), 15_000) : null
+  const controller = timeoutMs ? new AbortController() : null
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
   try {
   const res = await fetch(path, {
     method,
@@ -164,31 +165,16 @@ export const api = {
   sendChat: (data) => request('/api/chat', { method: 'POST', body: data }),
 
   // 图片与头像上传
+  getAppearance: () => request('/api/appearance'),
+  saveAppearance: (data) => request('/api/appearance', { method: 'PUT', body: { ...data, scope: 'site' }, auth: true, timeoutMs: 15_000 }),
   uploadImage: async (file) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    const headers = {}
-    if (getToken()) headers.Authorization = `Bearer ${getToken()}`
-    const res = await fetch('/api/upload/image', { method: 'POST', headers, body: formData })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.detail || '图片上传失败')
-    }
-    return res.json()
+    return uploadImageFile('/api/upload/image', file, getToken())
   },
 
   uploadAvatar: async (file) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    const headers = {}
-    if (getToken()) headers.Authorization = `Bearer ${getToken()}`
-    const res = await fetch('/api/upload/avatar', { method: 'POST', headers, body: formData })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.detail || '头像上传失败')
-    }
+    const res = await uploadImageFile('/api/upload/avatar', file, getToken())
     invalidatePublicCache()
-    return res.json()
+    return res
   },
 
   // 消息通知
@@ -215,11 +201,12 @@ export const api = {
   studyImport: (items) => request('/api/study/bank/import', { method: 'POST', body: { items }, auth: true }),
 
   // AI 聊天流式接口
-  sendChatStream: (data) =>
+  sendChatStream: (data, signal) =>
     fetch('/api/chat/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(getToken() ? {Authorization: `Bearer ${getToken()}`} : {}) },
       body: JSON.stringify(data),
+      signal,
     }),
 }
 

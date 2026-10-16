@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { api, clearToken, getToken, setToken } from './api'
+import { welcomeHistory } from './welcome/policy'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  useEffect(() => { if (user) welcomeHistory.markSeen() }, [user?.id])
 
   useEffect(() => {
     if (!getToken()) {

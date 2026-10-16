@@ -75,13 +75,6 @@ class PublicUserOut(PublicUserBrief):
     is_admin: bool
     created_at: datetime
 
-    @model_validator(mode="after")
-    def public_bio(self):
-        if self.username == ADMIN_ALIAS:
-            self.bio = public_reference(self.bio)
-        return self
-
-
 class UserProfile(PublicUserOut):
     """个人主页：带统计"""
 

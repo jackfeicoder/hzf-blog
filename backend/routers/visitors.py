@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from auth import get_current_user_optional
+from auth import require_superadmin
 from database import get_db
 import models
 import schemas
@@ -52,25 +54,48 @@ def get_client_ip(request: Request) -> str:
     return "127.0.0.1"
 
 
+def visit_day_start(now=None):
+    """UTC storage boundary for the current Asia/Shanghai calendar day."""
+    now = now or datetime.utcnow()
+    return (now + timedelta(hours=8)).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=8)
+
+
 def record_visit(request: Request, db: Session, user: Optional[models.User] = None, path: str = None):
-    """记录访问日志（带 30 秒防刷 + 7 天自动滚动清理）"""
+    """同 IP 每个北京时间自然日仅记录一次，保留七天滚动清理。"""
     try:
+        now = datetime.utcnow()
+        day_start = visit_day_start(now)
         ip = get_client_ip(request)
         target_path = path or request.url.path
         user_agent = request.headers.get("User-Agent", "")[:500]
 
-        # 1. 30 秒内同一 IP + 路径防刷拦截
-        recent_cutoff = datetime.utcnow() - timedelta(seconds=30)
+        # Unique DB claim serializes concurrent requests, including other workers.
+        if db.get_bind().dialect.name == 'sqlite':
+            # Starts a real write transaction even in SQLite legacy mode;
+            # claim and log commit together, without rolling back pending views.
+            claimed = db.execute(sqlite_insert(models.VisitDay).values(ip=ip, day_start=day_start)
+                                 .on_conflict_do_nothing(index_elements=['ip', 'day_start']))
+            if claimed.rowcount == 0:
+                return
+        else:
+            try:
+                with db.begin_nested():
+                    db.add(models.VisitDay(ip=ip, day_start=day_start))
+                    db.flush()
+            except IntegrityError:
+                return
+        # Honor records written earlier today, before this rule was deployed.
         recent_exists = (
             db.query(models.VisitLog.id)
             .filter(
                 models.VisitLog.ip == ip,
-                models.VisitLog.path == target_path[:200],
-                models.VisitLog.created_at >= recent_cutoff,
+                models.VisitLog.created_at >= day_start,
+                models.VisitLog.created_at < day_start + timedelta(days=1),
             )
             .first()
         )
         if recent_exists:
+            db.commit()
             return
 
         # 2. 写入新访问日志
@@ -79,14 +104,16 @@ def record_visit(request: Request, db: Session, user: Optional[models.User] = No
             user_id=user.id if user else None,
             path=target_path[:200],
             user_agent=user_agent,
+            created_at=now,
         )
         db.add(log)
 
         # 3. 自动滚动清理：删除 7 天前的旧日志，保持数据库轻量化
-        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        seven_days_ago = now - timedelta(days=7)
         db.query(models.VisitLog).filter(models.VisitLog.created_at < seven_days_ago).delete(
             synchronize_session=False
         )
+        db.query(models.VisitDay).filter(models.VisitDay.day_start < day_start - timedelta(days=7)).delete(synchronize_session=False)
 
         db.commit()
     except Exception:
@@ -95,18 +122,22 @@ def record_visit(request: Request, db: Session, user: Optional[models.User] = No
 
 
 @router.get("", response_model=VisitorsSummaryOut)
+@router.get("/", response_model=VisitorsSummaryOut, include_in_schema=False)
 def get_visitors(
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
-    user: Optional[models.User] = Depends(get_current_user_optional),
+    user: models.User = Depends(require_superadmin),
 ):
-    """获取实时访客数据与近期访问历史，同时记录本次访问看板"""
+    """仅站点管理员可查看访客数据，访问日志继续正常收集。"""
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization"
     # 记录当前查询访客页面的访问行为
     record_visit(request, db, user, path="/visitors")
 
     total_visits = db.query(models.VisitLog).count()
 
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = visit_day_start()
     today_visit_count = (
         db.query(models.VisitLog).filter(models.VisitLog.created_at >= today_start).count()
     )

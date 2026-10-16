@@ -6,10 +6,12 @@ import PostCard from '../components/PostCard'
 import { UserAvatar } from '../components/Layout'
 import { formatNum } from '../format'
 import PasswordChange from '../components/PasswordChange'
+import BioText from '../components/BioText'
+import { IMAGE_ACCEPT } from '../imageAssets'
 
 export default function Profile() {
   const { username } = useParams()
-  const { user, logout } = useAuth()
+  const { user, logout, setUser } = useAuth()
   const navigate = useNavigate()
   const [profile, setProfile] = useState(null)
   const [tab, setTab] = useState('posts') // posts | favorites
@@ -61,13 +63,15 @@ export default function Profile() {
 
   const onAvatarFileSelect = async (e) => {
     const file = e.target.files?.[0]
+    e.target.value = ''
     if (!file) return
     try {
       setUploading(true)
       const res = await api.uploadAvatar(file)
       if (res && res.url) {
         setProfile((prev) => ({ ...prev, avatar_url: res.url }))
-        window.location.reload()
+        setUser(res.user)
+        setNotice('头像已更新')
       }
     } catch (error) {
       alert(error.message || '头像更新失败')
@@ -91,7 +95,7 @@ export default function Profile() {
               type="file"
               ref={avatarInputRef}
               style={{ display: 'none' }}
-              accept="image/*"
+              accept={IMAGE_ACCEPT}
               onChange={onAvatarFileSelect}
             />
           )}
@@ -108,13 +112,13 @@ export default function Profile() {
                 onClick={() => avatarInputRef.current?.click()}
                 disabled={uploading}
               >
-                {uploading ? '上传中...' : '更换头像'}
+                {uploading ? '上传中...' : '更换头像（≤2MB）'}
               </button>
             )}
           </h1>
 
           <div className="muted">@{profile.username}</div>
-          <p className="bio">{profile.bio || '这个人很懒，还没有写简介'}</p>
+          <p className="bio"><BioText text={profile.bio || '这个人很懒，还没有写简介'} /></p>
           <div className="profile-stats">
             <span>
               <b>{profile.post_count}</b> 文章
@@ -146,7 +150,7 @@ export default function Profile() {
         </div>
       </div>
 
-      {notice && <div className="panel password-notice" role="status">{notice} <Link to="/login">重新登录</Link></div>}
+      {notice && <div className="panel password-notice" role="status">{notice} {!user && <Link to="/login">重新登录</Link>}</div>}
       {isMe && passwordOpen && <PasswordChange key={profile.id} onClose={() => setPasswordOpen(false)} onSuccess={() => {
         logout(); setPasswordOpen(false); setNotice('密码已修改，旧登录会话已失效。')
       }} />}

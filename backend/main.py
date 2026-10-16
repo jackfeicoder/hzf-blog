@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from fastapi.staticfiles import StaticFiles
+from image_static import ImageStaticFiles
 
 import models  # noqa: F401  确保模型注册到 Base.metadata
 from auth import hash_password
@@ -15,6 +15,7 @@ from routers.study import router as study_router, seed_bank
 from routers.media import router as media_router
 from routers.admin import router as admin_router
 from routers.music import router as music_router
+from routers.appearance import router as appearance_router
 
 DEFAULT_CATEGORIES = ["后端", "前端", "移动开发", "人工智能", "数据库", "运维", "算法", "生活随笔"]
 
@@ -52,6 +53,8 @@ async def lifespan(app: FastAPI):
             superadmin.is_admin = True
             db.commit()
     yield
+    from routers.music import FILE_CACHE
+    FILE_CACHE.close()
 
 
 app = FastAPI(title="Personal Blog API", lifespan=lifespan)
@@ -64,7 +67,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+app.mount("/uploads", ImageStaticFiles(directory=uploads_dir), name="uploads")
 
 app.include_router(auth_router.router)
 app.include_router(posts.router)
@@ -78,6 +81,7 @@ app.include_router(study_router)
 app.include_router(media_router)
 app.include_router(admin_router)
 app.include_router(music_router)
+app.include_router(appearance_router)
 
 
 

@@ -45,7 +45,7 @@ class AccountSecurityTests(unittest.TestCase):
     def test_public_identity_is_redacted_across_generated_surfaces(self):
         for path in ['/api/posts', '/api/posts/3?inc_view=false', '/api/rankings/posts', '/api/rankings/authors',
                      '/api/users/administrator', '/api/users/jackfei', '/api/users/alice/following',
-                     '/api/posts/3/comments', '/api/music/recommended', '/api/visitors', '/api/notifications']:
+                     '/api/posts/3/comments', '/api/music/recommended', '/api/notifications']:
             r = self.client.get(path, headers=self.headers())
             self.assertEqual(r.status_code, 200, (path, r.text))
             self.assertNotIn('jackfei', r.text, path)
@@ -54,6 +54,37 @@ class AccountSecurityTests(unittest.TestCase):
         self.assertEqual((public['username'], public['nickname']), ('administrator', '管理员'))
         with self.sessions() as db:
             self.assertEqual(db.get(models.User, self.ids['jackfei']).username, 'jackfei')
+
+    def test_visitors_only_superadmin_and_never_cached(self):
+        with self.sessions() as db:
+            before = db.query(models.VisitLog).count()
+        for headers, status in (({}, 401), (self.headers('alice'), 403),
+                                (self.headers('bob'), 403), (self.headers('other-admin'), 403),
+                                ({'Authorization': 'Bearer invalid'}, 401)):
+            for path in ('/api/visitors', '/api/visitors/'):
+                denied = self.client.get(path, headers=headers, follow_redirects=False)
+                self.assertEqual(denied.status_code, status, denied.text)
+                self.assertNotIn('location', denied.headers)
+                for secret in ('127.0.0.1', 'fixture', 'items', 'jackfei'):
+                    self.assertNotIn(secret, denied.text)
+        with self.sessions() as db:
+            self.assertEqual(db.query(models.VisitLog).count(), before)
+        allowed = self.client.get('/api/visitors', headers=self.headers('jackfei'))
+        self.assertEqual(allowed.status_code, 200, allowed.text)
+        self.assertEqual(allowed.headers['cache-control'], 'private, no-store')
+        self.assertEqual(allowed.headers['vary'], 'Authorization')
+        self.assertGreaterEqual(allowed.json()['total_visits'], before)
+        self.assertTrue(any(item['path'] == '/u/administrator' for item in allowed.json()['items']))
+        self.assertNotIn('jackfei', allowed.text)
+
+    def test_public_visits_still_record_without_access_to_dashboard(self):
+        response = self.client.get('/api/posts/3', headers={'X-Forwarded-For': '192.0.2.40', 'User-Agent': 'visitor-test'})
+        self.assertEqual(response.status_code, 200)
+        with self.sessions() as db:
+            log = db.query(models.VisitLog).filter_by(ip='192.0.2.40').one()
+            self.assertEqual(log.path, '/post/3')
+            self.assertIsNone(log.user_id)
+        self.assertEqual(self.client.get('/api/visitors').status_code, 401)
 
     def test_capabilities_stay_private_and_alias_resolves_with_draft_privacy(self):
         for who in ('alice', 'other-admin', 'jackfei'):
@@ -68,6 +99,22 @@ class AccountSecurityTests(unittest.TestCase):
             r = self.client.get(path, headers=self.headers())
             self.assertEqual(r.status_code, 403)
             self.assertNotIn('jackfei', r.text)
+
+    def test_author_bio_and_external_links_are_not_identity_fields(self):
+        bio = '我热爱编程。Github:https://github.com/jackfeicoder;Gitee:https://gitee.com/jackfei2545;CSDN:https://blog.csdn.net/qq_62480054'
+        with self.sessions() as db:
+            db.get(models.User, self.ids['jackfei']).bio = bio
+            db.commit()
+        for headers in ({}, self.headers(), self.headers('jackfei')):
+            for path in ('/api/users/administrator', '/api/users/jackfei'):
+                response = self.client.get(path, headers=headers)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()['bio'], bio)
+                self.assertEqual(response.json()['username'], 'administrator')
+                self.assertEqual(response.json()['nickname'], '管理员')
+                self.assertNotIn('password_hash', response.json())
+        with self.sessions() as db:
+            self.assertEqual(db.get(models.User, self.ids['jackfei']).bio, bio)
 
     def test_reserved_alias_cannot_be_registered(self):
         for name in ('administrator', 'Administrator', '管理员', 'JackFei'):

@@ -37,6 +37,33 @@ class User(Base):
 
     posts = relationship("Post", back_populates="author")
     password_state = relationship("PasswordState", uselist=False, cascade="all, delete-orphan")
+    appearance = relationship("UserAppearance", uselist=False, cascade="all, delete-orphan")
+
+
+class UserAppearance(Base):
+    __tablename__ = "user_appearance"
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    theme = Column(String(12), nullable=False, default="system")
+    palette = Column(String(12), nullable=False, default="warm")
+    background = Column(String(12), nullable=False, default="aurora")
+    background_url = Column(String(500), nullable=False, default="")
+    cursor = Column(String(12), nullable=False, default="system")
+    click_effect = Column(String(12), nullable=False, default="ripple")
+    motion = Column(Boolean, nullable=False, default=True)
+
+
+class SiteAppearance(Base):
+    """Singleton public visual settings; legacy personal rows stay intact."""
+    __tablename__ = "site_appearance"
+    id = Column(Integer, primary_key=True)
+    theme = Column(String(12), nullable=False, default="light")
+    palette = Column(String(12), nullable=False, default="warm")
+    background = Column(String(12), nullable=False, default="aurora")
+    background_url = Column(String(500), nullable=False, default="")
+    cursor = Column(String(12), nullable=False, default="system")
+    click_effect = Column(String(12), nullable=False, default="ripple")
+    motion = Column(Boolean, nullable=False, default=True)
+    glass_transparency = Column(Integer, nullable=False, default=11)
 
 
 class PasswordState(Base):
@@ -147,6 +174,13 @@ class Notification(Base):
     user = relationship("User", foreign_keys=[user_id])
     sender = relationship("User", foreign_keys=[sender_id], lazy="joined")
     post = relationship("Post", foreign_keys=[post_id], lazy="joined")
+
+
+class VisitDay(Base):
+    """Atomic claim: one visit per IP per Beijing calendar day."""
+    __tablename__ = "visit_days"
+    ip = Column(String(50), primary_key=True)
+    day_start = Column(DateTime, primary_key=True, index=True)
 
 
 class VisitLog(Base):

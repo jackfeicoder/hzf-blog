@@ -13,4 +13,5 @@ def public_name(user):
 
 
 def public_reference(value):
-    return value.replace(ADMIN_LOGIN, ADMIN_LABEL) if value else value
+    # References are identity fields, not free-form prose or URL substrings.
+    return ADMIN_LABEL if value == ADMIN_LOGIN else value

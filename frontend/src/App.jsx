@@ -4,6 +4,10 @@ import Layout from './components/Layout'
 import Home from './pages/Home'
 import { lazy, Suspense } from 'react'
 import MusicHost from './music/MusicHost'
+import AppearanceProvider from './appearance/AppearanceContext'
+import AppearanceHost from './appearance/AppearanceHost'
+import WelcomeGate from './welcome/WelcomeGate'
+import AdminOnly from './components/AdminOnly'
 
 const PostPage = lazy(() => import('./pages/PostPage'))
 const Editor = lazy(() => import('./pages/Editor'))
@@ -17,16 +21,21 @@ const Study = lazy(() => import('./pages/Study'))
 const Videos = lazy(() => import('./pages/Videos'))
 const Music = lazy(() => import('./pages/Music'))
 const Admin = lazy(() => import('./pages/Admin'))
+const Welcome = lazy(() => import('./pages/Welcome'))
 
 
 export default function App() {
   return (
     <AuthProvider>
+      <AppearanceProvider>
       <BrowserRouter>
+        <AppearanceHost />
         <MusicHost />
         <Layout>
           <Suspense fallback={<div className="container empty">正在加载页面…</div>}><Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<WelcomeGate><Home /></WelcomeGate>} />
+            <Route path="/welcome" element={<Welcome introductory />} />
+            <Route path="/about" element={<Welcome />} />
             <Route path="/post/:id" element={<PostPage />} />
             <Route path="/write" element={<Editor />} />
             <Route path="/edit/:id" element={<Editor />} />
@@ -35,7 +44,7 @@ export default function App() {
             <Route path="/u/:username" element={<Profile />} />
             <Route path="/rank" element={<Rank />} />
             <Route path="/ai" element={<ChatAI />} />
-            <Route path="/visitors" element={<Visitors />} />
+            <Route path="/visitors" element={<AdminOnly><Visitors /></AdminOnly>} />
             <Route path="/videos" element={<Videos />} />
             <Route path="/music" element={<Music />} />
             <Route path="/admin" element={<Admin />} />
@@ -44,6 +53,7 @@ export default function App() {
           </Routes></Suspense>
         </Layout>
       </BrowserRouter>
+      </AppearanceProvider>
     </AuthProvider>
   )
 }

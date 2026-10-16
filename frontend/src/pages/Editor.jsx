@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
 import { bindCodeCopy, renderMarkdown } from '../utils'
+import { IMAGE_ACCEPT, imageMarkdown } from '../imageAssets'
 
 export default function Editor() {
   const { id } = useParams()
@@ -19,6 +20,7 @@ export default function Editor() {
   const [categories, setCategories] = useState([])
   const [preview, setPreview] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [err, setErr] = useState('')
   const previewRef = useRef(null)
 
@@ -87,18 +89,18 @@ export default function Editor() {
   const fileInputRef = useRef(null)
 
   const handleFileUpload = async (file) => {
-    if (!file || !file.type.startsWith('image/')) return
+    if (!file || uploading) return
     try {
-      setBusy(true)
+      setUploading(true)
       const res = await api.uploadImage(file)
       if (res && res.url) {
-        const imgMarkdown = `\n![${file.name || '图片'}](${res.url})\n`
+        const imgMarkdown = imageMarkdown(file, res)
         setContent((prev) => prev + imgMarkdown)
       }
     } catch (e) {
       setErr(e.message)
     } finally {
-      setBusy(false)
+      setUploading(false)
     }
   }
 
@@ -130,6 +132,7 @@ export default function Editor() {
 
   const onFileInputChange = (e) => {
     const file = e.target.files?.[0]
+    e.target.value = ''
     if (file) {
       handleFileUpload(file)
     }
@@ -147,15 +150,16 @@ export default function Editor() {
               type="file"
               ref={fileInputRef}
               style={{ display: 'none' }}
-              accept="image/*"
+              accept={IMAGE_ACCEPT}
               onChange={onFileInputChange}
             />
             <button
               type="button"
               className="btn ghost"
               onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
             >
-              📷 插入图片
+              {uploading ? '图片上传中…' : '📷 插入图片（≤2MB）'}
             </button>
             <button type="button" className="btn ghost" onClick={() => setPreview((v) => !v)}>
               {preview ? '编辑' : '预览'}
@@ -164,7 +168,7 @@ export default function Editor() {
               <input type="checkbox" checked={published} onChange={(e) => setPublished(e.target.checked)} />
               发布
             </label>
-            <button className="btn primary" disabled={busy}>
+            <button className="btn primary" disabled={busy || uploading}>
               {busy ? '保存中...' : isEdit ? '更新' : '发布文章'}
             </button>
           </div>

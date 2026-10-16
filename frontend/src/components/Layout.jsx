@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { api } from '../api'
+import { useAppearance } from '../appearance/AppearanceContext'
+import AppearanceSettings from '../appearance/AppearanceSettings'
+import { visibleNavigation } from '../navigation'
 
 export function avatarText(name = '') {
   return (name || '?').slice(0, 1).toUpperCase()
@@ -10,31 +13,25 @@ export function avatarText(name = '') {
 export function UserAvatar({ user, size = 'sm', className = '' }) {
   const avatarUrl = user?.avatar_url
   const name = user?.nickname || user?.username || ''
-  if (avatarUrl) {
-    return (
+  const [loadedUrl, setLoadedUrl] = useState('')
+  const [failedUrl, setFailedUrl] = useState('')
+  return (
+    <span className={`avatar avatar-frame ${size} ${className}`} role="img" aria-label={name}>
+      <span aria-hidden="true">{avatarText(name)}</span>
+      {avatarUrl && failedUrl !== avatarUrl && (
       <img
         src={avatarUrl}
-        alt={name}
-        className={`avatar ${size} avatar-img ${className}`}
-        style={{ objectFit: 'cover' }}
-        onError={(e) => {
-          e.target.style.display = 'none'
-        }}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        fetchPriority="low"
+        className={`avatar-photo ${loadedUrl === avatarUrl ? 'is-loaded' : ''}`}
+        onLoad={() => setLoadedUrl(avatarUrl)}
+        onError={() => setFailedUrl(avatarUrl)}
       />
-    )
-  }
-  return <span className={`avatar ${size} ${className}`}>{avatarText(name)}</span>
-}
-
-const THEME_KEY = 'blog_theme'
-
-function getInitialTheme() {
-  try {
-    const saved = localStorage.getItem(THEME_KEY)
-    if (saved === 'dark' || saved === 'light') return saved
-    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark'
-  } catch { /* ignore */ }
-  return 'light'
+      )}
+    </span>
+  )
 }
 
 const navItems = [
@@ -42,11 +39,12 @@ const navItems = [
   { to: '/rank', label: '排行', icon: '🔥' },
   { to: '/write', label: '写作', icon: '✍️', auth: true },
   { to: '/ai', label: '问 AI', icon: '🤖' },
-  { to: '/visitors', label: '访客', icon: '👀' },
+  { to: '/visitors', label: '访客', icon: '👀', admin: true },
   { to: 'https://imagefree.net', label: '画图', icon: '🎨', external: true },
   { to: '/study', label: '学习打卡', icon: '✅' },
   { to: '/videos', label: '看视频', icon: '🎬' },
   { to: '/music', label: '听音乐', icon: '🎵' },
+  { to: '/about', label: '关于本站', icon: '✦', menuOnly: true },
   { to: '/admin', label: '管理后台', icon: '⚙️', admin: true },
 ]
 
@@ -57,8 +55,9 @@ export default function Layout({ children }) {
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
-  const [theme, setTheme] = useState(getInitialTheme)
-  const [progress, setProgress] = useState(0)
+  const { reduced, canEdit } = useAppearance()
+  const [appearanceOpen, setAppearanceOpen] = useState(false)
+  const progressRef = useRef(null)
   const [showTop, setShowTop] = useState(false)
 
   // 站内通知状态
@@ -79,7 +78,8 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     if (user) fetchNotifications()
-  }, [user, location.pathname])
+    else { setNotifications([]); setUnreadCount(0) }
+  }, [user?.id])
 
   const onMarkRead = async () => {
     try {
@@ -90,31 +90,28 @@ export default function Layout({ children }) {
   }
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark')
-    try {
-      localStorage.setItem(THEME_KEY, theme)
-    } catch { /* ignore */ }
-  }, [theme])
-
-  useEffect(() => {
     setMenuOpen(false)
     setShowNoti(false)
   }, [location.pathname, location.search])
 
   useEffect(() => {
-    const onScroll = () => {
+    let frame = 0
+    const measure = () => {
+      frame = 0
       const y = window.scrollY || 0
       setScrolled(y > 8)
       setShowTop(y > 420)
 
       const doc = document.documentElement
       const max = Math.max(doc.scrollHeight - window.innerHeight, 1)
-      setProgress(Math.min(100, Math.round((y / max) * 100)))
+      if (progressRef.current) progressRef.current.style.transform = `scaleX(${Math.min(1, y / max)})`
     }
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(measure) }
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('resize', onScroll)
     return () => {
+      cancelAnimationFrame(frame)
       window.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', onScroll)
     }
@@ -127,12 +124,12 @@ export default function Layout({ children }) {
     }
   }, [menuOpen])
 
-  const links = navItems.filter((i) => (!i.auth || user) && (!i.admin || user?.can_manage === true))
-  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
+  const links = visibleNavigation(navItems, user)
+  const openAppearance = () => { if (canEdit) { setMenuOpen(false); setAppearanceOpen(true) } }
 
   return (
     <div className="app">
-      <div className="reading-progress" style={{ width: `${progress}%` }} />
+      <div ref={progressRef} className="reading-progress" />
 
       <header className={`topbar ${scrolled ? 'is-scrolled' : ''}`}>
         <div className="topbar-inner">
@@ -151,7 +148,7 @@ export default function Layout({ children }) {
           </Link>
 
           <nav className="nav-links desktop-only">
-            {links.map((item) => (
+            {links.filter(item => !item.menuOnly).map((item) => (
               <NavLink key={item.to} to={item.to} end={item.end}>
                 {item.label}
               </NavLink>
@@ -159,22 +156,16 @@ export default function Layout({ children }) {
           </nav>
 
           <div className="topbar-right">
-            <button
-              type="button"
-              className="theme-toggle"
-              onClick={toggleTheme}
-              title={theme === 'dark' ? '切换亮色' : '切换暗色'}
-              aria-label="切换主题"
-            >
-              {theme === 'dark' ? '☀️' : '🌙'}
-            </button>
+            {canEdit && <button type="button" className="theme-toggle appearance-toggle" onClick={openAppearance} title="全站外观设置" aria-label="全站外观设置">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 2-2c0-1-1-1.5-1-2.5S15 15 16 15h2a3 3 0 0 0 3-3 9 9 0 0 0-9-9Z"/><circle cx="7" cy="10" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/><circle cx="17" cy="11" r="1"/></svg>
+            </button>}
 
             {user && (
               <div className="noti-wrapper" style={{ position: 'relative' }}>
                 <button
                   type="button"
                   className="icon-btn noti-bell-btn"
-                  onClick={() => setShowNoti(!showNoti)}
+                  onClick={() => { if (!showNoti) fetchNotifications(); setShowNoti(!showNoti) }}
                   title="站内消息通知"
                 >
                   🔔
@@ -300,9 +291,7 @@ export default function Layout({ children }) {
               我的主页
             </NavLink>
           )}
-          <button type="button" className="btn ghost block" onClick={toggleTheme}>
-            {theme === 'dark' ? '☀️ 切换亮色模式' : '🌙 切换暗色模式'}
-          </button>
+          {canEdit && <button type="button" className="btn ghost block" onClick={openAppearance}>🎨 全站外观与特效</button>}
         </nav>
         {user && (
           <button
@@ -345,7 +334,7 @@ export default function Layout({ children }) {
       <button
         type="button"
         className={`back-top ${showTop ? 'show' : ''}`}
-        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        onClick={() => window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' })}
         aria-label="回到顶部"
         title="回到顶部"
       >
@@ -353,8 +342,9 @@ export default function Layout({ children }) {
       </button>
 
       <footer className="footer desktop-only">
-        <div className="container">CodeBlog · 技术社区 · React + FastAPI</div>
+        <div className="container">CodeBlog · 技术社区 · React + FastAPI · <Link to="/about">关于本站</Link></div>
       </footer>
+      {appearanceOpen && canEdit && <AppearanceSettings onClose={() => setAppearanceOpen(false)} />}
     </div>
   )
 }

@@ -19,6 +19,15 @@ beforeEach(() => {
 })
 afterEach(() => mock.restoreAll())
 
+test('AI streaming carries the blog session separately from a provider key', async () => {
+  setToken('fixture-blog-session')
+  const controller = new AbortController()
+  await api.sendChatStream({provider:'sensenova',api_key:'',messages:[]},controller.signal)
+  assert.equal(calls[0].options.headers.Authorization,'Bearer fixture-blog-session')
+  assert.equal(JSON.parse(calls[0].options.body).api_key,'')
+  assert.equal(calls[0].options.signal,controller.signal)
+})
+
 test('home requests share cached responses with sidebars', async () => {
   await Promise.all([api.listPosts(), api.listPosts()])
   await api.listPosts()
@@ -28,6 +37,17 @@ test('home requests share cached responses with sidebars', async () => {
   await api.hotPosts(8); await api.hotPosts(8)
   await api.topAuthors(6); await api.topAuthors(6)
   assert.equal(calls.length, 4)
+})
+test('global appearance reads work for guests and always revalidate; writes authenticate', async () => {
+  await api.getAppearance(); await api.getAppearance()
+  assert.equal(calls.length,2)
+  assert.equal(calls[0].options.headers.Authorization,undefined)
+  setToken('administrator-fixture')
+  await api.saveAppearance({glass_transparency:35})
+  assert.equal(calls[2].options.method,'PUT')
+  assert.equal(calls[2].options.headers.Authorization,'Bearer administrator-fixture')
+  assert.equal(JSON.parse(calls[2].options.body).glass_transparency,35)
+  assert.equal(JSON.parse(calls[2].options.body).scope,'site')
 })
 test('filters and sorting have distinct cache keys', async () => {
   await api.listPosts({ search: 'java' })

@@ -369,6 +369,10 @@ html.dark .topbar.is-scrolled {
 .avatar.sm { width: 28px; height: 28px; font-size: 12px; }
 .avatar.lg { width: 48px; height: 48px; font-size: 18px; }
 .avatar.xl { width: 72px; height: 72px; font-size: 28px; }
+.avatar-frame { position: relative; overflow: hidden; }
+.avatar-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 180ms ease; }
+.avatar-photo.is-loaded { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .avatar-photo { transition: none; } }
 
 .author-link {
   display: inline-flex;

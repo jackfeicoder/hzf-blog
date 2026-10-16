@@ -1,4 +1,5 @@
 import { marked } from 'marked'
+import { imageDimensions } from './imageAssets'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/core'
 import java from 'highlight.js/lib/languages/java'
@@ -133,8 +134,10 @@ renderer.image = function image(tokenOrHref, title, text) {
 
   const titleHtml = titleAttr ? ` title="${escapeHtml(titleAttr)}"` : ''
   const altHtml = escapeHtml(alt || '图片')
+  const size = imageDimensions(href)
+  const sizeHtml = size ? ` width="${size.width}" height="${size.height}"` : ''
   return `<figure class="md-figure">
-  <img src="${escapeHtml(href)}" alt="${altHtml}"${titleHtml} loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+  <img src="${escapeHtml(href)}" alt="${altHtml}"${titleHtml}${sizeHtml} loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" />
   ${alt ? `<figcaption>${altHtml}</figcaption>` : ''}
 </figure>\n`
 }
@@ -209,6 +212,9 @@ const PURIFY_CONFIG = {
     'class',
     'loading',
     'decoding',
+    'fetchpriority',
+    'width',
+    'height',
     'referrerpolicy',
     'align',
     'data-copy',
