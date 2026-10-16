@@ -22,6 +22,9 @@ class MusicTests(unittest.TestCase):
         music.CACHE.clear(); music.LIMITS.clear(); music.TICKETS.clear()
         music.SOURCE_COOLING.clear()
         self.temp = tempfile.TemporaryDirectory()
+        from music_lyrics import LyricCache
+        lyric_patch = patch.object(music, 'LYRIC_CACHE', LyricCache(path=Path(self.temp.name) / 'lyrics.sqlite3'))
+        lyric_patch.start(); self.addCleanup(lyric_patch.stop)
         from music_files import MusicFiles
         files = MusicFiles(root=Path(self.temp.name) / 'audio', index=Path(self.temp.name) / 'files.sqlite3', enabled=False)
         files_patch = patch.object(music, 'FILE_CACHE', files)

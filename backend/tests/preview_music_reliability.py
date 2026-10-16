@@ -8,12 +8,14 @@ from auth import create_access_token
 from music_models import MusicSource
 from music_routing import RoutingStore
 from music_files import MusicFiles
+from music_lyrics import LyricCache
 from models import User
 from music_models import MusicEntry, MusicList
 from routers import music, appearance
 from preview_study import app, sessions, workspace
 
 music.ROUTING = RoutingStore(Path(workspace.name)/'routing.sqlite3')
+music.LYRIC_CACHE = LyricCache(Path(workspace.name)/'lyrics.sqlite3')
 music.FILE_CACHE = MusicFiles(root=Path(workspace.name)/'audio', index=Path(workspace.name)/'files.sqlite3')
 app.include_router(appearance.router)
 original_upstream = music.upstream

@@ -28,6 +28,7 @@ from music_worker import run_source
 from music_routing import RoutingStore, choose_quality, same_recording, route_key
 from music_playback import AudioCache, SingleFlight, SourceCooling, url_key, health_key
 from music_files import MusicFiles
+from music_lyrics import LyricCache, has_lyrics, resolved_key
 from models import User
 
 router = APIRouter(prefix='/api/music', tags=['music'])
@@ -43,6 +44,7 @@ AUDIO_CACHE = AudioCache(path=Path(__file__).resolve().parents[1] / '.runtime' /
 URL_FLIGHTS = SingleFlight()
 SOURCE_COOLING = SourceCooling()
 FILE_CACHE = MusicFiles(enabled=os.getenv('MUSIC_FILE_CACHE', '1') == '1')
+LYRIC_CACHE = LyricCache(Path(__file__).resolve().parents[1] / '.runtime' / 'music-lyrics.sqlite3')
 logger = logging.getLogger('uvicorn.error')
 
 
@@ -169,6 +171,9 @@ async def search(request: Request, response: Response, q: str = Query(min_length
 async def lyrics(request: Request, source: Literal['wy', 'tx', 'kw', 'kg', 'mg'], id: str = Query(max_length=160, pattern=r'^[a-zA-Z0-9_\-]+$')):
     limit(request)
     key = ('lyrics', source, id)
+    result = await asyncio.to_thread(LYRIC_CACHE.get, key)
+    if result is not None:
+        return result
     result = cached(key)
     if result is not None:
         return result
@@ -186,7 +191,9 @@ async def lyrics(request: Request, source: Literal['wy', 'tx', 'kw', 'kg', 'mg']
         if not isinstance(data, dict):
             raise ValueError()
         value = {'lyric': str(data.get('lyric') or '')[:100000], 'translation': str(data.get('tlyric') or '')[:100000]}
-        # Empty/non-timed metadata is not a usable lyric and must not stay for an hour.
+        if has_lyrics(value):
+            await asyncio.to_thread(LYRIC_CACHE.put, key, value)
+        # Only negative results remain short lived; disk entries never expire.
         return remember(key, value, 3600 if has_lyrics(value) else 15)
     except Exception:
         return {'lyric': '', 'translation': ''}
@@ -331,10 +338,6 @@ def ticket(url, source_id, name, context=None):
             **({'playback_song': context['song'], 'quality': context['quality']} if context else {})}
 
 
-def has_lyrics(data):
-    return bool(re.search(r'\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]', data.get('lyric') or ''))
-
-
 async def recording_matches(song, request, platforms):
     key = ('recordings', song.key, song.name, song.singer, tuple(platforms))
     value = cached(key)
@@ -366,6 +369,11 @@ class LyricResolve(BaseModel):
 @router.post('/lyrics/resolve')
 async def resolve_lyrics(body: LyricResolve, request: Request, response: Response):
     private(response)
+    limit(request, 'lyrics_resolve', 60)
+    key = resolved_key(body.song)
+    saved = await asyncio.to_thread(LYRIC_CACHE.get, key)
+    if saved is not None:
+        return saved
     candidates = [body.song]
     if body.playback_song and body.playback_song.key != body.song.key and same_recording(body.song.model_dump(), body.playback_song.model_dump()):
         candidates.insert(0, body.playback_song)
@@ -378,7 +386,12 @@ async def resolve_lyrics(body: LyricResolve, request: Request, response: Respons
                 except TimeoutError:
                     continue
                 if has_lyrics(data):
-                    return {**data, 'source': candidate.source, 'song_id': candidate.id}
+                    value = {**data, 'source': candidate.source, 'song_id': candidate.id}
+                    # A browser-supplied playback candidate is not proof of identity:
+                    # cache its platform lyrics, but do not persist a global alias.
+                    if candidate is body.song:
+                        await asyncio.to_thread(LYRIC_CACHE.put, key, value)
+                    return value
             alternatives = await recording_matches(body.song, request, [p for p in ('wy', 'kg', 'tx') if p not in {s.source for s in candidates}])
             for row in alternatives:
                 candidate = Song.model_validate(row)
@@ -386,7 +399,9 @@ async def resolve_lyrics(body: LyricResolve, request: Request, response: Respons
                     async with asyncio.timeout(3):
                         data = await lyrics(request, source=candidate.source, id=candidate.lyric_id or candidate.id)
                     if has_lyrics(data):
-                        return {**data, 'source': candidate.source, 'song_id': candidate.id}
+                        value = {**data, 'source': candidate.source, 'song_id': candidate.id}
+                        await asyncio.to_thread(LYRIC_CACHE.put, key, value)
+                        return value
                 except TimeoutError:
                     continue
     except TimeoutError:
