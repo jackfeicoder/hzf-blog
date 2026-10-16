@@ -2,17 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { api } from '../api'
+import { useAuth } from '../AuthContext'
+import { availableModel, DEFAULT_CHAT_MODEL, readChatEvents } from '../chat/config'
 
 const STORAGE_KEY_PREFIX = 'blog_ai_'
 
 export default function ChatAI() {
+  const { user } = useAuth()
   const [providers, setProviders] = useState([])
   const [provider, setProvider] = useState('sensenova')
-  const [model, setModel] = useState('sensenova-6.7-flash-lite')
+  const [model, setModel] = useState(DEFAULT_CHAT_MODEL)
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [showKey, setShowKey] = useState(false)
   const [temperature, setTemperature] = useState(0.7)
+  const [reasoning, setReasoning] = useState('none')
+  const [modelNotice, setModelNotice] = useState('')
 
   const [messages, setMessages] = useState([
     {
@@ -27,14 +32,21 @@ export default function ChatAI() {
   const [errorMsg, setErrorMsg] = useState('')
 
   const chatEndRef = useRef(null)
+  const requestRef = useRef(null)
+  useEffect(() => () => requestRef.current?.abort(), [])
 
   // 1. 获取后端支持的 Provider 列表
   useEffect(() => {
+    let active = true
     api
       .getChatProviders()
       .then((res) => {
-        if (res && res.providers) {
+        if (active && res && res.providers) {
           setProviders(res.providers)
+          const nextModel = availableModel(savedModel, res.providers.find(p => p.id === savedProvider))
+          setModel(nextModel)
+          localStorage.setItem(STORAGE_KEY_PREFIX + 'model', nextModel)
+          if (nextModel !== savedModel) setModelNotice(`原模型已更新，已为你选择 ${nextModel}`)
         }
       })
       .catch((err) => {
@@ -43,7 +55,7 @@ export default function ChatAI() {
 
     // 读取本地保存的 Key 和配置
     const savedProvider = localStorage.getItem(STORAGE_KEY_PREFIX + 'provider') || 'sensenova'
-    const savedModel = localStorage.getItem(STORAGE_KEY_PREFIX + 'model') || 'sensenova-6.7-flash-lite'
+    const savedModel = localStorage.getItem(STORAGE_KEY_PREFIX + 'model') || DEFAULT_CHAT_MODEL
     const savedBaseUrl = localStorage.getItem(STORAGE_KEY_PREFIX + 'baseurl') || ''
 
     if (savedProvider) setProvider(savedProvider)
@@ -52,17 +64,19 @@ export default function ChatAI() {
 
     const savedKey = localStorage.getItem(STORAGE_KEY_PREFIX + 'apikey') || ''
     if (savedKey && savedKey !== 'sk-xxxx') setApiKey(savedKey)
+    return () => { active = false }
   }, [])
 
   // 切换 Provider 时自动切换默认 Model
   const handleProviderChange = (e) => {
     const pId = e.target.value
+    setModelNotice('')
     setProvider(pId)
     localStorage.setItem(STORAGE_KEY_PREFIX + 'provider', pId)
 
     const found = providers.find((p) => p.id === pId)
     if (found && found.models && found.models.length > 0) {
-      const defaultM = found.models[0]
+      const defaultM = availableModel('', found)
       setModel(defaultM)
       localStorage.setItem(STORAGE_KEY_PREFIX + 'model', defaultM)
     } else {
@@ -88,15 +102,20 @@ export default function ChatAI() {
 
   // 滚动到底部
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    chatEndRef.current?.scrollIntoView({ behavior: loading ? 'auto' : 'smooth', block: 'nearest' })
   }, [messages, loading])
 
   // 发送消息（SSE 流式实时打印）
   const handleSend = async (overrideText) => {
     const textToSend = overrideText || input
-    if (!textToSend.trim()) return
+    if (loading || requestRef.current || !textToSend.trim()) return
+    if (!model.trim()) { setErrorMsg('请先选择可用模型'); return }
     if (!apiKey.trim() && provider !== 'sensenova') {
       setErrorMsg('请先填写 API Key')
+      return
+    }
+    if (!apiKey.trim() && provider === 'sensenova' && !user) {
+      setErrorMsg('使用站点模型请先登录博客，或填写自己的 API Key')
       return
     }
     setErrorMsg('')
@@ -106,71 +125,47 @@ export default function ChatAI() {
     setMessages(newMessages)
     if (!overrideText) setInput('')
     setLoading(true)
+    const controller = new AbortController()
+    requestRef.current = controller
 
     // 预先放置一个空的 assistant 消息用于流式追加内容
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
 
-    const apiMessages = newMessages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
+    const apiMessages = newMessages.slice(1)
+      .filter((m) => m.content && (m.role === 'user' || m.role === 'assistant'))
       .slice(-10)
+    // Never send the local greeting as an initial assistant message.
+    while (apiMessages[0]?.role === 'assistant') apiMessages.shift()
 
     try {
       const response = await api.sendChatStream({
         provider,
         api_key: apiKey.trim(),
-        base_url: baseUrl.trim() || undefined,
+        base_url: provider === 'custom' ? baseUrl.trim() || undefined : undefined,
         model: model.trim(),
         messages: apiMessages,
         temperature: Number(temperature),
-      })
+        reasoning_effort: reasoning,
+      }, controller.signal)
 
       if (!response.ok) {
         const errJson = await response.json().catch(() => ({}))
         throw new Error(errJson.detail || `请求失败 (${response.status})`)
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder('utf-8')
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith('data: ')) continue
-          const dataStr = trimmed.slice(6).trim()
-          if (dataStr === '[DONE]') break
-
-          try {
-            const parsed = JSON.parse(dataStr)
-            if (parsed.error) {
-              setErrorMsg(parsed.error)
-              break
-            }
-            if (parsed.content) {
-              setMessages((prev) => {
-                const next = [...prev]
-                const lastIdx = next.length - 1
-                next[lastIdx] = {
-                  ...next[lastIdx],
-                  content: next[lastIdx].content + parsed.content,
-                }
-                return next
-              })
-            }
-          } catch {
-            /* ignore JSON parse errors */
-          }
+      await readChatEvents(response, parsed => {
+        if (parsed.model && parsed.model !== model) {
+          setModel(parsed.model)
+          localStorage.setItem(STORAGE_KEY_PREFIX + 'model', parsed.model)
         }
-      }
+        if (parsed.content) setMessages(prev => {
+          const next = [...prev], last = next.length - 1
+          next[last] = {...next[last], content: next[last].content + parsed.content}
+          return next
+        })
+      })
     } catch (err) {
-      setErrorMsg(err.message || 'AI 响应失败，请检查 API Key 和网络配置')
+      setErrorMsg(err.name === 'AbortError' ? '' : err.message || 'AI 响应失败，请检查 API Key 和网络配置')
       setMessages((prev) => {
         const last = prev[prev.length - 1]
         if (last && last.role === 'assistant' && !last.content) {
@@ -179,6 +174,7 @@ export default function ChatAI() {
         return prev
       })
     } finally {
+      requestRef.current = null
       setLoading(false)
     }
   }
@@ -210,13 +206,13 @@ export default function ChatAI() {
       <div className="card chat-config-card">
         <div className="chat-config-header">
           <h2>🤖 AI 智能助手</h2>
-          <span className="chat-config-tip">API Key 保存在浏览器本地，服务器不存储</span>
+          <span className="chat-config-tip">个人 Key 保存在本浏览器；站点 Key 仅保存在服务器，登录后可用</span>
         </div>
 
         <div className="chat-config-grid">
           <div className="form-group">
             <label>服务提供商</label>
-            <select value={provider} onChange={handleProviderChange} className="form-control">
+            <select value={provider} disabled={loading || !providers.length} onChange={handleProviderChange} className="form-control">
               {providers.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -228,7 +224,7 @@ export default function ChatAI() {
           <div className="form-group">
             <label>模型选择</label>
             {curProviderObj && curProviderObj.models && curProviderObj.models.length > 0 ? (
-              <select value={model} onChange={(e) => handleModelChange(e.target.value)} className="form-control">
+              <select value={model} disabled={loading} onChange={(e) => handleModelChange(e.target.value)} className="form-control">
                 {curProviderObj.models.map((m) => (
                   <option key={m} value={m}>
                     {m}
@@ -245,6 +241,14 @@ export default function ChatAI() {
               />
             )}
           </div>
+
+          {provider === 'sensenova' && <div className="form-group">
+            <label>回答模式</label>
+            <select value={reasoning} disabled={loading} onChange={e => setReasoning(e.target.value)} className="form-control">
+              <option value="none">快速回答（默认）</option>
+              <option value="high">深度思考（等待更久、消耗更多额度）</option>
+            </select>
+          </div>}
 
           <div className="form-group">
             <label>API Key {provider === 'sensenova' && providers.find(p => p.id === provider)?.is_free && <span className="free-badge">站点已配置</span>}</label>
@@ -292,7 +296,8 @@ export default function ChatAI() {
           )}
         </div>
 
-        {errorMsg && <div className="error-alert">{errorMsg}</div>}
+        {modelNotice && <p className="chat-config-tip" role="status">{modelNotice}</p>}
+        {provider === 'sensenova' && <p className="chat-config-tip">模型列表定期同步官方；可用性及剩余额度以商汤套餐为准。站点调用每人每分钟最多 10 次。</p>}
       </div>
 
       {/* 聊天对话区域 */}
@@ -319,11 +324,13 @@ export default function ChatAI() {
 
         </div>
 
+        {errorMsg && <div className="error-alert" role="alert">{errorMsg}</div>}
         {/* 快捷 Prompt */}
         <div className="chat-presets">
           <button
             type="button"
             className="btn-preset"
+            disabled={loading}
             onClick={() => handleSend('请帮我写一篇关于 Python FastAPI 高性能后端开发的博客大纲和开篇')}
           >
             💡 生成 FastAPI 文章大纲
@@ -331,6 +338,7 @@ export default function ChatAI() {
           <button
             type="button"
             className="btn-preset"
+            disabled={loading}
             onClick={() => handleSend('请比较一下 React 与 Vue 3 在状态管理和组件开发上的异同点')}
           >
             ⚡ React vs Vue3 区别
@@ -338,6 +346,7 @@ export default function ChatAI() {
           <button
             type="button"
             className="btn-preset"
+            disabled={loading}
             onClick={() => handleSend('请帮我排查并重构一段代码，使其性能更好、结构更清晰')}
           >
             🛠️ 代码优化排查
@@ -362,6 +371,7 @@ export default function ChatAI() {
           >
             {loading ? '发送中...' : '发送'}
           </button>
+          {loading && <button type="button" className="btn" onClick={() => requestRef.current?.abort()}>停止生成</button>}
         </div>
       </div>
     </div>

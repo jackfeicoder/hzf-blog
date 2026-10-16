@@ -14,9 +14,11 @@ class ChatIn(BaseModel):
     provider: str = Field(default="sensenova", max_length=32)
     api_key: Optional[str] = Field(default="", max_length=512)
     base_url: Optional[str] = Field(default=None, max_length=500)
-    model: str = Field(default="Nova-5-Pro", max_length=120)
+    model: str = Field(default="", max_length=120)
     messages: list[ChatMessage] = Field(min_length=1, max_length=80)
     temperature: float = Field(default=0.7, ge=0, le=2)
+    max_tokens: int = Field(default=4096, ge=1, le=8192)
+    reasoning_effort: Literal['none', 'low', 'medium', 'high'] = 'none'
 
 
     @field_validator("api_key", "model", "provider", mode="before")

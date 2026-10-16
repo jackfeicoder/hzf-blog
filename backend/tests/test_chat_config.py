@@ -1,5 +1,6 @@
 """Public source must not embed a provider credential or replace a user's key."""
 import unittest
+import asyncio
 from unittest.mock import patch
 from fastapi import HTTPException
 from routers import chat
@@ -21,4 +22,4 @@ class ChatConfigTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as raised:
                 chat.resolve_api_key('sensenova', None)
             self.assertEqual(raised.exception.status_code, 400)
-            self.assertFalse(chat.list_providers()['providers'][0]['is_free'])
+            self.assertFalse(asyncio.run(chat.list_providers())['providers'][0]['is_free'])
