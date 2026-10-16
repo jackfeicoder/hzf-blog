@@ -102,6 +102,7 @@ def release(stage, files=None, required_paths=("/api/study/today",), restart_bac
                 atomic_copy(source, ROOT / "frontend/dist" / source.relative_to(stage / "frontend/dist"))
         atomic_copy(stage / "frontend/dist/index.html", ROOT / "frontend/dist/index.html")
         print("RELEASE_OK", flush=True)
+        return backup
     except Exception:
         for name, present in existed.items():
             if present:
