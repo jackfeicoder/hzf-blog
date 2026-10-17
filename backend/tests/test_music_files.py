@@ -168,6 +168,28 @@ class FileRouteTests(unittest.TestCase):
             self.assertIsNotNone(cache.get(self.song,'128k'))
             self.assertEqual(music.ROUTING.diagnostics()['recent'],[])
 
+    def test_client_errors_keep_shared_file_and_refresh_reuses_it_without_sources(self):
+        cache, data = self.prepare()
+        with patch.object(music,'FILE_CACHE',cache), patch.object(music,'run_source',AsyncMock()) as runner:
+            first = self.client.post('/api/music/resolve',json={'song':self.song}).json()
+            token = first['url'].rsplit('/',1)[-1]
+            original = cache.get(self.song,'128k')
+            for event in ('error','stalled','playing','error'):
+                feedback = self.client.post('/api/music/feedback',json={'token':token,'event':event})
+                self.assertEqual(feedback.status_code,204)
+                saved = cache.get(self.song,'128k')
+                self.assertEqual(saved['checksum'],original['checksum'])
+                self.assertEqual(cache.path(saved['id']).read_bytes(),data)
+            refreshed = self.client.post('/api/music/resolve',json={'song':self.song,'refresh_token':token})
+            self.assertEqual(refreshed.status_code,200,refreshed.text)
+            self.assertTrue(refreshed.json()['file_cache_hit'])
+            self.assertNotEqual(refreshed.json()['url'],first['url'])
+            partial = self.client.get(refreshed.json()['url'],headers={'Range':'bytes=2000-2999'})
+            self.assertEqual(partial.status_code,206)
+            self.assertEqual(partial.content,data[2000:3000])
+            self.assertEqual(runner.await_count,0)
+            self.assertEqual(music.ROUTING.diagnostics()['recent'],[])
+
     def test_cache_management_is_admin_only_and_busy_files_are_protected(self):
         cache, _ = self.prepare()
         with patch.object(music,'FILE_CACHE',cache):

@@ -35,5 +35,6 @@
 - 拖动预览期间暂停缓冲看门狗，提交后重新计时。跳转本身不算稳定播放进度、不立即触发换源。
 - 管理员在“音源管理 → 歌曲文件缓存”查看占用、剩余空间、待处理任务和最近 50 首文件，可删除未受播放保护的缓存；下次播放重新尝试缓存。
 - 缓存故障应回退到原取流流程，不把后台缓存失败记为当前播放失败。首次上游播放及浏览器到阿里云/Cloudflare 链路仍可能等待。
+- 手机/浏览器上报 `error`、`stalled` 等播放反馈，不删除完整服务器歌曲文件；客户端断网或 WebView 报错不代表文件损坏。刷新播放连接时仍优先命中文件缓存，生成新票据重试，不因此重新解析上游。管理员主动删除和既有容量淘汰规则保持不变。
 
 参考：[Nginx internal](https://nginx.org/en/docs/http/ngx_http_core_module.html#internal)、[Mutagen 文件识别](https://mutagen.readthedocs.io/en/latest/api/base.html)。

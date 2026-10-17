@@ -449,9 +449,8 @@ def playback_feedback(body: PlaybackFeedback, request: Request, response: Respon
     if not context:
         return
     if context.get('file_id'):
-        # Browser-side network stalls do not prove a complete local file is bad.
-        if body.event == 'error':
-            FILE_CACHE.invalidate(context['file_id'], context.get('file_checksum'))
+        # Client errors include network/WebView failures, not just corrupt audio.
+        # Never let one listener delete a complete file shared by every user.
         return
     # Browser feedback never promotes unverified URLs or globally penalizes a source.
     if body.event == 'playing' and context.get('ready') and not context.get('reported_playing'):
@@ -487,19 +486,18 @@ def check_audio(url):
 @router.post('/resolve')
 async def resolve(body: Resolve, request: Request, response: Response, db: Session = Depends(get_db)):
     limit(request, 'resolve-any', 120); private(response)
-    refresh_ticket = TICKETS.get(body.refresh_token)
-    local_refresh = refresh_ticket and refresh_ticket[0] > time.monotonic() and refresh_ticket[2] and refresh_ticket[2].get('file_id') and refresh_ticket[2].get('song_key') == body.song.key
-    if not local_refresh:
-        try:
-            local = FILE_CACHE.get(body.song.model_dump(), body.quality)
-            if not local and body.quality == '128k':
-                local = FILE_CACHE.get(body.song.model_dump(), '320k')
-        except (OSError, ValueError, sqlite3.Error):
-            local = None
-        if local:
-            context = dict(file_id=local['id'], file_checksum=local['checksum'], song_key=body.song.key, song=local['song'], quality=local['quality'],
-                           requested_quality=body.quality, source_id=0, digest='', ready=False)
-            return {**ticket('', 0, '本机缓存', context), 'cache_hit': True, 'file_cache_hit': True, 'attempted': []}
+    # A refreshed playback ticket is a connection retry, not cache invalidation.
+    # Keep preferring the complete server file, including on mobile errors.
+    try:
+        local = FILE_CACHE.get(body.song.model_dump(), body.quality)
+        if not local and body.quality == '128k':
+            local = FILE_CACHE.get(body.song.model_dump(), '320k')
+    except (OSError, ValueError, sqlite3.Error):
+        local = None
+    if local:
+        context = dict(file_id=local['id'], file_checksum=local['checksum'], song_key=body.song.key, song=local['song'], quality=local['quality'],
+                       requested_quality=body.quality, source_id=0, digest='', ready=False)
+        return {**ticket('', 0, '本机缓存', context), 'cache_hit': True, 'file_cache_hit': True, 'attempted': []}
     limit(request, 'resolve', 20)
     rows = db.query(MusicSource).filter_by(enabled=True).order_by(MusicSource.position, MusicSource.id).all()
     if not rows:
