@@ -42,7 +42,8 @@ async def platform_search(upstream, source, query, page):
     if source == 'kw':
         payload = await upstream('http://search.kuwo.cn/r.s?' + urlencode(dict(
             client='kt', all=query, pn=page - 1, rn=20, ft='music', encoding='utf8',
-            rformat='json', vermerge=1, mobi=1)))
+            rformat='json', vermerge=1, mobi=1, show_copyright_off=1, newver=1,
+            cluster=0, strategy=2012, issubtitle=1, ver='kwplayer_ar_9.2.2.1', vipver=1)))
         raw = rows(payload, 'abslist')
         return [dict(id=str(r.get('MUSICRID', '')).removeprefix('MUSIC_'),
                      name=unescape(r.get('SONGNAME') or r.get('NAME') or ''),

@@ -11,10 +11,17 @@ IMAGE = 'hzf-music-node:20261002'
 RUNTIME = Path(__file__).with_name('music_runtime.cjs')
 
 
+class SourceRetryable(Exception):
+    def __init__(self, retry_after=15):
+        self.retry_after = max(1, min(300, int(retry_after)))
+        super().__init__('音源暂时未完成请求')
+
+
 async def run_source(script, name, action='probe', source='wy', info=None):
     if os.getenv('MUSIC_SANDBOX') != 'docker':
         raise ValueError('音源隔离服务尚未启用')
     async with GATE:
+        transient = []
         container = 'hzf-music-' + uuid.uuid4().hex
         proc = None
         tasks = set()
@@ -34,6 +41,9 @@ async def run_source(script, name, action='probe', source='wy', info=None):
             async def reply(message):
                 try:
                     response = await asyncio.to_thread(fetch, message['url'], message.get('options'))
+                    if response['statusCode'] in (408, 429, 503, 504):
+                        hint = next((v for k,v in response.get('headers', {}).items() if k.lower() == 'retry-after'), '15')
+                        transient.append(int(hint) if str(hint).isdigit() else 15)
                     value = dict(type='reply', id=message['id'], response=response)
                 except Exception:
                     value = dict(type='reply', id=message['id'], error='上游请求失败')
@@ -53,6 +63,8 @@ async def run_source(script, name, action='probe', source='wy', info=None):
                             raise ValueError('音源输出过大')
                         return message
                     if message.get('type') != 'http':
+                        if transient:
+                            raise SourceRetryable(max(transient))
                         raise ValueError('音源暂时不可用')
                     count += 1
                     if count > 24 or len(tasks) >= 8:

@@ -2,9 +2,11 @@ import { musicApi } from './api.js'
 import { addToQueue, nextIndex, nextUnfailedIndex, parseLyrics, songKey } from './logic.js'
 import { music } from './store.js'
 import { bufferedRanges } from './seekGesture.js'
+import { waitForRetry } from './retry.js'
 
 export class MusicController {
-  constructor(audio, request = musicApi) {
+  constructor(audio, request = musicApi, wait = waitForRetry) {
+    this.wait = wait
     this.audio = audio; this.request = request; this.generation = 0; this.session = 0; this.desired = false; this.failures = []; this.attempts = 0; this.failedSongs = new Set()
     this.events = {
       timeupdate: () => { if (this.url) { this.lastPosition = audio.currentTime || 0; music.progress({ time: this.lastPosition }); if (!audio.paused && this.lastPosition - this.recoveryStart >= 3) this.failedSongs.clear() } },
@@ -76,7 +78,7 @@ export class MusicController {
     music.set({ playing: false, status: 'idle', sourceName: '', playbackSong: null, activeQuality: null, lyricsLoading: false }); music.progress({ time: 0, duration: 0, buffered: [] })
   }
   async play(song, queue, failedSongs = new Set()) {
-    this.stop(); this.switching = false; this.pendingFailure = null; this.failures = []; this.attempted = []; this.refreshed = new Set(); this.attempts = 0; this.recorded = false; this.desired = true
+    this.stop(); this.switching = false; this.pendingFailure = null; this.failures = []; this.attempted = []; this.deferred = []; this.refreshed = new Set(); this.attempts = 0; this.recorded = false; this.desired = true
     this.failedSongs = failedSongs; this.skipMessage = failedSongs.size ? '上一首暂无可用音源，正在自动尝试下一首…' : ''
     const existing = queue || music.get().queue
     music.set({ current: song, queue: existing.some(s => songKey(s) === songKey(song)) ? existing : [...existing, song], lyrics: [], translation: [], message: '', status: 'resolving' })
@@ -97,26 +99,32 @@ export class MusicController {
     this.abort?.abort(); this.abort = new AbortController(); this.url = null
     music.set({ status: 'resolving', playing: false, message: gatewayRetry ? '音乐连接暂时中断，正在自动重试…' : this.failures.length ? '正在尝试下一个音源…' : this.skipMessage })
     try {
-      const data = await this.request('/resolve', { method: 'POST', body: { song, quality: music.get().quality, attempted: this.attempted, refresh_token: refreshToken, allow_platform_fallback: true }, signal: this.abort.signal })
+      const data = await this.request('/resolve', { method: 'POST', body: { song, quality: music.get().quality, attempted: this.attempted, deferred: this.deferred, refresh_token: refreshToken, allow_platform_fallback: true }, signal: this.abort.signal })
       if (generation !== this.generation) return
-      this.attempted = data.attempted || this.attempted; this.activeRoute = `${data.source_id}:${data.playback_song?.source || song.source}:${data.playback_song?.id || song.id}:${data.quality || music.get().quality}`
+      this.deferred = data.deferred || this.deferred
+      this.attempted = data.attempted || this.attempted; this.activeRoute = data.route_id || `${data.source_id}:${data.playback_song?.source || song.source}:${data.playback_song?.id || song.id}:${data.quality || music.get().quality}`
       this.url = data.url; this.seekAfterLoad = seek; this.lastPosition = seek; this.recoveryStart = seek
       this.audio.src = data.url; this.audio.load(); music.set({ sourceName: data.source_name, playbackSong: data.playback_song || song, activeQuality: data.quality || music.get().quality, status: this.desired ? 'buffering' : 'paused' })
       if (data.playback_song && songKey(data.playback_song) !== songKey(song)) this.lyrics(song, data.playback_song)
       if (this.desired) { this.watchdog(); await this.resume() }
     } catch (e) {
       if (generation !== this.generation) return
-      // JSON errors already exhausted enabled sources. Retry only a gateway
-      // interruption once; never loop or undo the user's pause.
-      if (this.desired && e.continuation && continuation < 2) {
+      // A transport error or batch budget never proves all interfaces failed.
+      // Keep the candidate ledger across as many batches as the server needs.
+      if (this.desired && e.continuation) {
         this.attempted = e.attempted || this.attempted
-        return this.resolve(song, generation, seek, false, '', continuation + 1)
+        this.deferred = e.deferred || this.deferred
+        music.set({ message: e.retryAfter ? `部分接口暂未完成，等待 ${e.retryAfter} 秒后继续检测…` : `继续检测剩余音源与平台（第 ${continuation + 2} 批）…` })
+        try { await this.wait((e.retryAfter || 0) * 1000, this.abort.signal) } catch { return }
+        if (generation === this.generation && this.desired) return this.resolve(song, generation, seek, false, '', continuation + 1)
+        return
       }
       if (!gatewayRetry && this.desired && e.retryable && (e.gateway || e instanceof TypeError || e.name === 'AbortError')) {
         music.set({ message: '音乐连接暂时中断，正在自动重试…' })
         return this.resolve(song, generation, seek, true, refreshToken, continuation)
       }
-      if (this.desired && !e.cooldown && (e.retryable || e.status === 404)) return this.failSong(song, generation)
+      if (this.desired && e.exhausted === true) return this.failSong(song, generation)
+      if (!this.desired) { music.set({ status: 'paused', playing: false }); return }
       this.clearTimer(); this.desired = false
       music.set({ status: 'error', playing: false, message: e.name === 'AbortError' ? '音源请求超时，请重试或切换平台' : e.message })
     }
@@ -155,7 +163,7 @@ export class MusicController {
     else { this.attempted = [...new Set([...this.attempted, route])]; this.failures.push(Number(route?.split(':')[0])) }
     const token = refresh ? oldUrl?.match(/^\/api\/music\/stream\/([\w-]+)$/)?.[1] || '' : ''
     this.audio.pause(); this.url = null
-    if (++this.attempts >= 14) { this.switching = false; return this.failSong(music.get().current, generation) }
+    ++this.attempts // Only explicit server exhaustion may skip the song.
     try { await this.resolve(music.get().current, generation, seek, false, token) }
     finally {
       if (generation === this.generation) {

@@ -15,6 +15,7 @@ class AudioMock {
   async play() { this.played++; this.handlers.playing?.() }
 }
 const song = id => ({ source: 'wy', id: String(id), name: String(id) })
+const exhaustedError = () => Object.assign(new MusicApiError('all interfaces exhausted', 502), { exhausted: true })
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
 beforeEach(() => { music.set({ queue: [], current: null, mode: 'sequence', actor: null, library: music.guestLists(), libraryLoading: false, message: '' }); music.progress({ time: 0, duration: 0 }) })
 
@@ -128,18 +129,20 @@ test('interrupted playback refreshes same route once then excludes it, preservin
   c.destroy()
 })
 
-test('continuation carries failed routes forward and is bounded to three batches', async () => {
+test('continuation reaches a working seventh batch without skipping or dropping routes', async () => {
   const a = new AudioMock(), bodies = []
   const c = new MusicController(a, async (path, options) => {
     if (path.startsWith('/lyrics')) return {}
     bodies.push(options.body)
+    if (bodies.length === 7) return { url: '/seventh-batch', source_id: 7 }
     const e = new MusicApiError('more candidates', 502)
     e.continuation = true; e.attempted = [`${bodies.length}:wy:1:128k`]; throw e
-  })
+  }, async () => {})
   await c.play(song(1))
-  assert.equal(bodies.length, 3)
+  assert.equal(bodies.length, 7)
   assert.deepEqual(bodies[1].attempted, ['1:wy:1:128k'])
-  assert.equal(music.get().status, 'error')
+  assert.equal(music.get().status, 'playing')
+  assert.equal(a.getAttribute('src'), '/seventh-batch')
   c.destroy()
 })
 
@@ -182,7 +185,7 @@ test('exhausted sources skip successive failed songs and play the next available
   const c = new MusicController(a, async (path, options) => {
     if (path.startsWith('/lyrics')) return {}
     ids.push(options.body.song.id)
-    if (options.body.song.id !== '3') throw new MusicApiError('all sources failed', 502)
+    if (options.body.song.id !== '3') throw exhaustedError()
     return { url: '/song3', source_id: 1, source_name: 'one' }
   })
   await c.play(song(1), [song(1), song(2), song(3)])
@@ -195,7 +198,7 @@ test('an entirely unavailable queue stops after one round even in repeat-one or 
   for (const mode of ['sequence', 'single', 'shuffle']) {
     const ids = [], c = new MusicController(new AudioMock(), async (path, options) => {
       if (path.startsWith('/lyrics')) return {}
-      ids.push(options.body.song.id); throw new MusicApiError('all sources failed', 502)
+      ids.push(options.body.song.id); throw exhaustedError()
     })
     c.mode(mode)
     await c.play(song(1), [song(1), song(2), song(3)])
@@ -205,7 +208,7 @@ test('an entirely unavailable queue stops after one round even in repeat-one or 
   }
 })
 
-test('browser playback failures at the retry limit also advance to another song', async () => {
+test('browser playback retry count never skips a song with untested interfaces', async () => {
   const a = new AudioMock(), c = new MusicController(a, async (path, options) => {
     if (path.startsWith('/lyrics')) return {}
     return { url: '/song' + options.body.song.id, source_id: 1, source_name: 'one' }
@@ -213,8 +216,8 @@ test('browser playback failures at the retry limit also advance to another song'
   await c.play(song(1), [song(1), song(2)])
   c.attempts = 13
   await c.fallback('stalled')
-  assert.equal(music.get().current.id, '2'); assert.equal(music.get().status, 'playing')
-  assert.equal(a.getAttribute('src'), '/song2'); c.destroy()
+  assert.equal(music.get().current.id, '1'); assert.equal(music.get().status, 'playing')
+  assert.equal(a.getAttribute('src'), '/song1'); assert.equal(c.attempts, 14); c.destroy()
 })
 
 test('manual pause and late failures never start another song', async () => {
@@ -246,7 +249,7 @@ test('manual retry starts a fresh round; stable playback clears failure round', 
   let unavailable = true
   const a = new AudioMock(), c = new MusicController(a, async path => {
     if (path.startsWith('/lyrics')) return {}
-    if (unavailable) throw new MusicApiError('all sources failed', 502)
+    if (unavailable) throw exhaustedError()
     return { url: '/audio', source_id: 1, source_name: 'one' }
   })
   await c.play(song(1), [song(1), song(2)])
@@ -264,5 +267,43 @@ test('temporary source cooling does not burn through the whole song queue', asyn
   })
   await c.play(song(1), [song(1), song(2), song(3)])
   assert.equal(calls, 1); assert.equal(music.get().current.id, '1'); assert.equal(c.desired, false)
+  c.destroy()
+})
+
+test('unclassified 404/502/503/504 responses never authorize skipping', async () => {
+  for (const status of [404,502,503,504]) {
+    const c = new MusicController(new AudioMock(), async path => {
+      if (path.startsWith('/lyrics')) return {}
+      throw new MusicApiError('incomplete or unknown',status)
+    })
+    await c.play(song(1),[song(1),song(2)])
+    assert.equal(music.get().current.id,'1'); assert.equal(c.failedSongs.size,0)
+    c.destroy()
+  }
+})
+
+test('cooling continuation respects retry delay then continues the same song', async () => {
+  let calls=0; const delays=[], bodies=[]
+  const c = new MusicController(new AudioMock(), async (path, options) => {
+    if (path.startsWith('/lyrics')) return {}
+    bodies.push(options.body)
+    if (++calls===1) throw Object.assign(new MusicApiError('cooling',503),{continuation:true,retryAfter:30,attempted:['done-route'],deferred:['timeout-route']})
+    return {url:'/after-cooling',source_id:2}
+  },async milliseconds=>{delays.push(milliseconds)})
+  await c.play(song(1),[song(1),song(2)])
+  assert.equal(calls,2); assert.deepEqual(delays,[30000]); assert.equal(music.get().current.id,'1')
+  assert.deepEqual(bodies[1].attempted,['done-route']); assert.deepEqual(bodies[1].deferred,['timeout-route'])
+  assert.equal(music.get().status,'playing'); c.destroy()
+})
+
+test('pause during continuation wait cancels further requests without advancing', async () => {
+  let calls=0; const waiting=deferred()
+  const c = new MusicController(new AudioMock(), async path=>{
+    if (path.startsWith('/lyrics')) return {}
+    calls++; throw Object.assign(new MusicApiError('pending',502),{continuation:true,retryAfter:15})
+  },async()=>{ c.toggle(); await waiting.promise })
+  const playing=c.play(song(1),[song(1),song(2)])
+  await Promise.resolve(); await Promise.resolve(); waiting.resolve(); await playing
+  assert.equal(calls,1); assert.equal(music.get().current.id,'1'); assert.equal(c.desired,false)
   c.destroy()
 })

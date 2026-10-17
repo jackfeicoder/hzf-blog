@@ -35,8 +35,11 @@ export async function musicApi(path, { method = 'GET', body, signal, timeout = 3
       const detail = data?.detail
       const error = new MusicApiError(typeof detail === 'string' ? detail : detail?.message || '操作失败，请重试', response.status)
       error.attempted = Array.isArray(detail?.attempted) ? detail.attempted : []
+      error.deferred = Array.isArray(detail?.deferred) ? detail.deferred : []
       error.continuation = detail?.continue === true
       error.cooldown = detail?.cooldown === true
+      error.exhausted = detail?.exhausted === true
+      error.retryAfter = Math.max(0, Math.min(300, Number(detail?.retry_after) || 0))
       throw error
     }
     return data

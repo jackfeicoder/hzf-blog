@@ -24,7 +24,8 @@ from database import get_db
 from music_models import MusicEntry, MusicList, MusicSource
 from music_http import fetch, open_http, target
 from music_search import platform_search
-from music_worker import run_source
+from music_worker import run_source, SourceRetryable
+from music_candidates import candidates as playback_candidates, branch_script
 from music_routing import RoutingStore, choose_quality, same_recording, route_key
 from music_playback import AudioCache, SingleFlight, SourceCooling, url_key, health_key
 from music_files import MusicFiles
@@ -46,6 +47,7 @@ SOURCE_COOLING = SourceCooling()
 FILE_CACHE = MusicFiles(enabled=os.getenv('MUSIC_FILE_CACHE', '1') == '1')
 LYRIC_CACHE = LyricCache(Path(__file__).resolve().parents[1] / '.runtime' / 'music-lyrics.sqlite3')
 logger = logging.getLogger('uvicorn.error')
+RESOLVE_SECONDS = 27
 
 
 def observation(context, stage, status, reason='', started=None):
@@ -320,7 +322,8 @@ class Resolve(BaseModel):
     song: Song
     quality: Literal['128k', '320k', 'flac', 'flac24bit'] = '128k'
     exclude: list[int] = Field(default_factory=list, max_length=30)
-    attempted: list[Annotated[str, Field(max_length=250)]] = Field(default_factory=list, max_length=60)
+    attempted: list[Annotated[str, Field(max_length=300)]] = Field(default_factory=list, max_length=6000)
+    deferred: list[Annotated[str, Field(max_length=300)]] = Field(default_factory=list, max_length=6000)
     refresh_token: str = Field(default='', max_length=100, pattern=r'^[a-zA-Z0-9_\-]*$')
     allow_platform_fallback: bool = True
     model_config = {'extra': 'forbid'}
@@ -338,6 +341,12 @@ def ticket(url, source_id, name, context=None):
             **({'playback_song': context['song'], 'quality': context['quality']} if context else {})}
 
 
+class RecordingMatches(list):
+    def __init__(self, values=(), pending=()):
+        super().__init__(values)
+        self.pending = tuple(pending)
+
+
 async def recording_matches(song, request, platforms):
     key = ('recordings', song.key, song.name, song.singer, tuple(platforms))
     value = cached(key)
@@ -345,19 +354,19 @@ async def recording_matches(song, request, platforms):
         return value
     if not song.singer:
         return []
-    matches = []
+    pending = []
     async def find(platform):
         try:
             async with asyncio.timeout(4):
                 result = await search(request, Response(), q=(song.name+' '+song.singer)[:100], source=platform, page=1)
             candidates = [row for row in result['items'] if same_recording(song.model_dump(), row)]
             if candidates:
-                return candidates[0]
+                return candidates
         except Exception:
-            pass
-    values = await asyncio.gather(*(find(p) for p in platforms[:2]))
-    matches = [v for v in values if v]
-    return remember(key, matches, 1800 if matches else 15)
+            pending.append(platform)
+    values = await asyncio.gather(*(find(p) for p in platforms))
+    matches = RecordingMatches([v for group in values if group for v in group], pending)
+    return remember(key, matches, 1800 if matches and not pending else 15)
 
 
 class LyricResolve(BaseModel):
@@ -458,6 +467,9 @@ def playback_feedback(body: PlaybackFeedback, request: Request, response: Respon
 def check_audio(url):
     r, c, final = open_http(url, headers={'Range': 'bytes=0-511'})
     try:
+        if r.status in (408, 429, 503, 504):
+            hint = r.getheader('Retry-After', '15')
+            raise SourceRetryable(int(hint) if str(hint).isdigit() else 15)
         if r.status not in (200, 206):
             raise ValueError('音频不可用')
         kind = r.getheader('Content-Type', '').lower()
@@ -493,6 +505,7 @@ async def resolve(body: Resolve, request: Request, response: Response, db: Sessi
     if not rows:
         raise HTTPException(503, '没有可用音源，请联系管理员导入并启用音源')
     attempted = list(dict.fromkeys(body.attempted))
+    deferred = list(dict.fromkeys(body.deferred))
     candidates = [body.song]
     preferred = ROUTING.preferred(body.song.key, body.quality)
     if preferred and not any(s.id == preferred['source_id'] and s.digest == preferred['digest'] for s in rows):
@@ -509,7 +522,7 @@ async def resolve(body: Resolve, request: Request, response: Response, db: Sessi
         refresh_context = None
     if refresh_context and refresh_context['song_key'] == body.song.key:
         candidates.insert(0, Song.model_validate(refresh_context['song']))
-    deadline = time.monotonic() + 27
+    deadline = time.monotonic() + RESOLVE_SECONDS
     exhausted, tried_candidates = True, set()
     fresh_attempts = cooling_skipped = globally_skipped = 0
     cooling_waits = []
@@ -526,28 +539,34 @@ async def resolve(body: Resolve, request: Request, response: Response, db: Sessi
         else:
             # Reuse a known address before paying for another script/container.
             eligible.sort(key=lambda s: AUDIO_CACHE.get(url_key(s.id, s.digest, candidate.key, choose_quality(json.loads(s.capabilities)[candidate.source], body.quality))) is None)
-        for row in eligible:
-            actual_quality = choose_quality(json.loads(row.capabilities)[candidate.source], body.quality)
-            route = route_key(row.id, candidate.model_dump(), actual_quality)
+        plan = list(playback_candidates(eligible, candidate.source, body.quality))
+        def deferred_order(item):
+            row, quality, branch = item
+            route = route_key(row.id, candidate.model_dump(), quality) + (':'+branch if branch else '')
+            return (1, deferred.index(route)) if route in deferred else (0, 0)
+        # A repeatedly timing-out first source must not starve unvisited routes.
+        plan.sort(key=deferred_order)
+        for row, actual_quality, branch in plan:
+            route = route_key(row.id, candidate.model_dump(), actual_quality) + (':'+branch if branch else '')
             if route in attempted:
                 continue
             remaining = deadline - time.monotonic()
             if remaining < 2:
                 exhausted = False
                 return None
-            attempted.append(route)
             context = dict(song_key=body.song.key, title=body.song.name, singer=body.song.singer,
                            source_id=row.id, source_name=row.name, digest=row.digest, song=candidate.model_dump(),
                            quality=actual_quality, requested_quality=body.quality, original_song=body.song.model_dump(), ready=False)
             supported = json.loads(row.capabilities)[candidate.source].get('qualitys', [])
             context['cacheable'] = actual_quality == next((q for q in ('128k', '320k', 'flac', 'flac24bit') if q in supported), '128k')
             key = url_key(row.id, row.digest, candidate.key, actual_quality)
-            source_key = health_key(row.id, row.digest, candidate.source, actual_quality)
+            source_key = health_key(row.id, row.digest, candidate.source, actual_quality + (':'+branch if branch else ''))
             force = bool(refresh_context and row.id == refresh_context['source_id'] and candidate.key == refresh_context['song']['source'] + ':' + refresh_context['song']['id'])
             if force:
                 AUDIO_CACHE.discard(key)
             url = AUDIO_CACHE.get(key)
             if not force and not url and SOURCE_COOLING.blocked(source_key, body.song.key):
+                exhausted = False
                 cooling_skipped += 1
                 globally_skipped += int(SOURCE_COOLING.globally_blocked(source_key))
                 cooling_waits.append(SOURCE_COOLING.retry_after(source_key, body.song.key))
@@ -559,12 +578,12 @@ async def resolve(body: Resolve, request: Request, response: Response, db: Sessi
                     if not url:
                         fresh_attempts += 1
                         # Capture loop locals: the shared task may outlive its caller.
-                        async def fresh(row=row, candidate=candidate, actual_quality=actual_quality, key=key, source_key=source_key):
+                        async def fresh(row=row, candidate=candidate, actual_quality=actual_quality, key=key, source_key=source_key, branch=branch):
                             try:
                                 async with asyncio.timeout(10):
                                     info = candidate.model_dump()
                                     info.update(songmid=candidate.id, hash=candidate.id, albumName=candidate.album)
-                                    data = await run_source(row.script, row.name, 'musicUrl', candidate.source, dict(type=actual_quality, musicInfo=info))
+                                    data = await run_source(branch_script(row.script, branch), row.name, 'musicUrl', candidate.source, dict(type=actual_quality, musicInfo=info))
                                     value = await asyncio.to_thread(check_audio, data.get('result'))
                                     AUDIO_CACHE.put(key, value)
                                     SOURCE_COOLING.succeeded(source_key, body.song.key)
@@ -572,10 +591,18 @@ async def resolve(body: Resolve, request: Request, response: Response, db: Sessi
                             except Exception:
                                 SOURCE_COOLING.failed(source_key, body.song.key)
                                 raise
-                        url = await URL_FLIGHTS.run(key, fresh)
+                        url = await URL_FLIGHTS.run(key + (branch,) if branch else key, fresh)
                     observation(context, 'resolved', 'ok', started=started)
-                    return {**ticket(url, row.id, row.name, context), 'attempted': attempted, 'cache_hit': cache_hit}
+                    return {**ticket(url, row.id, row.name, context), 'attempted': attempted + [route], 'deferred': deferred, 'route_id': route, 'cache_hit': cache_hit}
+            except (TimeoutError, SourceRetryable) as error:
+                exhausted = False
+                if route in deferred: deferred.remove(route)
+                deferred.append(route)
+                cooling_waits.append(getattr(error, 'retry_after', 5))
+                observation(context, 'resolve_pending', 'pending', type(error).__name__, started)
             except Exception as error:
+                if route in deferred: deferred.remove(route)
+                attempted.append(route)
                 observation(context, 'resolve_error', 'failed', type(error).__name__, started)
         return None
 
@@ -596,13 +623,26 @@ async def resolve(body: Resolve, request: Request, response: Response, db: Sessi
             exhausted = False
             return
         alternatives = await recording_matches(body.song, request, [p for p in ('wy', 'kg', 'tx', 'kw', 'mg') if p not in {s.source for s in candidates} and any(p in json.loads(r.capabilities) for r in rows)])
-        for matched in alternatives:
+        if getattr(alternatives, 'pending', ()):
+            exhausted = False
+            cooling_waits.append(15)
+        async def matched_attempt(matched):
             candidate = Song.model_validate(matched)
             if candidate.key not in tried_candidates:
                 tried_candidates.add(candidate.key)
-                result = await attempt(candidate)
-                if result:
-                    return result
+                return await attempt(candidate)
+        tasks = [asyncio.create_task(matched_attempt(matched)) for matched in alternatives]
+        try:
+            pending = set(tasks)
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    if result := task.result():
+                        return result
+        finally:
+            for task in tasks:
+                if not task.done(): task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     if body.allow_platform_fallback and body.song.singer:
         tasks = {asyncio.create_task(primary()), asyncio.create_task(backup())}
@@ -624,10 +664,11 @@ async def resolve(body: Resolve, request: Request, response: Response, db: Sessi
             return result
     if not fresh_attempts and cooling_skipped:
         retry_after = max(1, min(cooling_waits))
-        raise HTTPException(503, detail={'message': f'音源连续失败，正在短暂冷却，约 {retry_after} 秒后可重试或换个平台', 'cooldown': globally_skipped == cooling_skipped, 'retry_after': retry_after},
+        raise HTTPException(503, detail={'message': f'剩余音源正在冷却，约 {retry_after} 秒后继续检测', 'cooldown': True, 'retry_after': retry_after, 'attempted': attempted, 'deferred': deferred, 'continue': True, 'exhausted': False},
                             headers={'Retry-After': str(retry_after), 'Cache-Control': 'no-store'})
-    raise HTTPException(502, detail={'message': '本次可用音源未返回音频，已尝试换源；请稍后重试',
-                                    'attempted': attempted, 'continue': not exhausted}, headers={'Cache-Control': 'no-store'})
+    raise HTTPException(502, detail={'message': '所有候选接口均未返回有效音频' if exhausted else '尚有候选接口未完成，正在继续检测',
+                                    'attempted': attempted, 'deferred': deferred, 'continue': not exhausted, 'exhausted': exhausted,
+                                    'retry_after': min(cooling_waits) if cooling_waits else 0}, headers={'Cache-Control': 'no-store'})
 
 
 @router.get('/stream/{token}')

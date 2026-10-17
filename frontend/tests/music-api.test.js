@@ -50,3 +50,10 @@ test('temporary source cooling is preserved separately from exhausted song error
   t.mock.method(globalThis, 'fetch', async () => Response.json({detail:{message:'音源冷却中',cooldown:true}}, {status:503}))
   await assert.rejects(musicApi('/resolve'), e => e.cooldown === true && e.status === 503)
 })
+
+test('only explicit exhaustion authorizes skipping; pending batches retain ledger and retry hint', async t => {
+  const fetch=t.mock.method(globalThis,'fetch',async()=>Response.json({detail:{message:'pending',continue:true,exhausted:false,retry_after:45,attempted:['done'],deferred:['pending-route']}},{status:502}))
+  await assert.rejects(musicApi('/resolve'),e=>e.continuation && !e.exhausted && e.retryAfter===45 && e.attempted[0]==='done' && e.deferred[0]==='pending-route')
+  fetch.mock.mockImplementation(async()=>Response.json({detail:{message:'all failed',exhausted:true,continue:false}},{status:502}))
+  await assert.rejects(musicApi('/resolve'),e=>e.exhausted && !e.continuation)
+})

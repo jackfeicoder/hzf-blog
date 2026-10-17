@@ -175,13 +175,16 @@ class ResolveCacheTests(unittest.TestCase):
         self.assertEqual(response.status_code,200); self.assertEqual(response.json()['source_id'],2)
         self.assertEqual(runner.await_count,0); self.assertEqual(alternatives.await_count,0)
 
-    def test_song_only_cooling_still_allows_client_to_skip_to_next_song(self):
+    def test_song_only_cooling_is_incomplete_and_never_authorizes_skip(self):
         self.source()
         from music_playback import health_key
         music.SOURCE_COOLING.failed(health_key(1,'d'*64,'wy','128k'),'wy:123')
         with patch.object(music,'run_source',AsyncMock()) as runner:
             response=self.client.post('/api/music/resolve',json={'song':self.song,'allow_platform_fallback':False})
-        self.assertEqual(response.status_code,503); self.assertFalse(response.json()['detail']['cooldown'])
+        self.assertEqual(response.status_code,503); self.assertTrue(response.json()['detail']['cooldown'])
+        self.assertTrue(response.json()['detail']['continue'])
+        self.assertFalse(response.json()['detail']['exhausted'])
+        self.assertEqual(response.json()['detail']['attempted'], [])
         self.assertEqual(runner.await_count,0)
 
     def test_alternate_platform_can_win_while_primary_is_still_waiting(self):
