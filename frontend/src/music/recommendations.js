@@ -1,5 +1,6 @@
 import { musicApi } from './api.js'
 import { waitForRetry } from './retry.js'
+import { playbackAddresses } from './playbackAddresses.js'
 
 export const RECOMMENDATION_KEY = 'music-public-recommendation-v1'
 const storage = { getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) }
@@ -39,6 +40,7 @@ export class RecommendationFeed {
         }
         if (controller.signal.aborted) throw new DOMException('读取已取消', 'AbortError')
         this.value = clean(result); this.failures = 0; this.nextRefresh = this.now() + 30000
+        playbackAddresses.seed(this.value.songs, result.cached_audio)
         try { this.storage.setItem(RECOMMENDATION_KEY, JSON.stringify(this.value)) } catch { /* Quota/private mode must not hide valid data. */ }
         return this.value
       } catch (error) {

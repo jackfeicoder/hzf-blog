@@ -330,6 +330,10 @@ class Resolve(BaseModel):
     model_config = {'extra': 'forbid'}
 
 
+def file_signature(identifier, checksum):
+    return hmac.new(SECRET_KEY.encode(), ('music-file-v1:' + identifier + ':' + checksum).encode(), hashlib.sha256).hexdigest()
+
+
 def ticket(url, source_id, name, context=None):
     now = time.monotonic()
     if context is not None:
@@ -337,8 +341,7 @@ def ticket(url, source_id, name, context=None):
     # Opaque, versioned file tickets keep the browser cache useful across plays
     # and service restarts. Upstream URLs retain random, short-lived tickets.
     if context and context.get('file_id') and context.get('file_checksum'):
-        identity = 'music-file-v1:' + context['file_id'] + ':' + context['file_checksum']
-        token = hmac.new(SECRET_KEY.encode(), identity.encode(), hashlib.sha256).hexdigest()
+        token = file_signature(context['file_id'], context['file_checksum'])
     else:
         token = secrets.token_urlsafe(32)
     TICKETS[token] = (now + 1800, url, context)
@@ -347,6 +350,33 @@ def ticket(url, source_id, name, context=None):
         TICKETS.popitem(last=False)
     return {'url': '/api/music/stream/' + token, 'source_id': source_id, 'source_name': name, 'expires_in': 1800,
             **({'playback_song': context['song'], 'quality': context['quality']} if context else {})}
+
+
+async def cached_ticket(local, song_key=None, requested_quality=None):
+    song = local['song']
+    context = dict(file_id=local['id'], file_checksum=local['checksum'], song_key=song_key or song['source'] + ':' + song['id'],
+                   song=song, quality=local['quality'], requested_quality=requested_quality or local['quality'], source_id=0, digest='', ready=False)
+    result = ticket('', 0, '本机缓存', context)
+    try:
+        await asyncio.to_thread(FILE_CACHE.remember_ticket, result['url'].rsplit('/', 1)[-1], local['id'], local['checksum'])
+    except (OSError, ValueError, sqlite3.Error):
+        logger.warning('music_file_ticket_store_unavailable')
+    return {**result, 'cache_hit': True, 'file_cache_hit': True, 'attempted': []}
+
+
+@router.post('/cached')
+async def cached_address(body: Resolve, request: Request, response: Response):
+    """Cache-only discovery for background warming; never run source scripts."""
+    limit(request, 'cached', 60); private(response)
+    try:
+        local = await asyncio.to_thread(FILE_CACHE.get, body.song.model_dump(), body.quality)
+        if not local and body.quality == '128k':
+            local = await asyncio.to_thread(FILE_CACHE.get, body.song.model_dump(), '320k')
+        if local:
+            return await cached_ticket(local, body.song.key, body.quality)
+    except (OSError, ValueError, sqlite3.Error):
+        pass
+    return Response(status_code=204, headers={'Cache-Control': 'private, no-store'})
 
 
 class RecordingMatches(list):
@@ -503,9 +533,7 @@ async def resolve(body: Resolve, request: Request, response: Response, db: Sessi
     except (OSError, ValueError, sqlite3.Error):
         local = None
     if local:
-        context = dict(file_id=local['id'], file_checksum=local['checksum'], song_key=body.song.key, song=local['song'], quality=local['quality'],
-                       requested_quality=body.quality, source_id=0, digest='', ready=False)
-        return {**ticket('', 0, '本机缓存', context), 'cache_hit': True, 'file_cache_hit': True, 'attempted': []}
+        return await cached_ticket(local, body.song.key, body.quality)
     limit(request, 'resolve', 20)
     rows = db.query(MusicSource).filter_by(enabled=True).order_by(MusicSource.position, MusicSource.id).all()
     if not rows:
@@ -679,11 +707,25 @@ async def resolve(body: Resolve, request: Request, response: Response, db: Sessi
 
 @router.get('/stream/{token}')
 async def stream(token: str, request: Request):
+    limit(request, 'stream', 60)
     value = TICKETS.get(token)
     if not value or value[0] < time.monotonic():
         TICKETS.pop(token, None)
-        raise HTTPException(410, '播放地址已过期，请重新播放')
-    limit(request, 'stream', 60)
+        value = None
+        # Complete-file capabilities survive RAM ticket expiry/restarts. The
+        # persisted mapping must still match both the file version and signature.
+        local = None
+        try:
+            local = await asyncio.to_thread(FILE_CACHE.by_ticket, token)
+        except (OSError, ValueError, sqlite3.Error):
+            pass
+        if local:
+            expected = file_signature(local['id'], local['checksum'])
+            if hmac.compare_digest(token, expected):
+                restored = await cached_ticket(local)
+                value = TICKETS.get(restored['url'].rsplit('/', 1)[-1])
+        if not value:
+            raise HTTPException(410, '播放地址已过期，请重新播放')
     context = value[2]
     if context and not context.get('file_id'):
         try:
@@ -820,7 +862,21 @@ def recommended(response: Response, db: Session = Depends(get_db)):
         song = Song.model_validate_json(row.song)
         if song.key not in seen:
             songs.append(song.model_dump()); seen.add(song.key)
-    return {'name': '管理员的歌单', 'owner': 'administrator', 'songs': songs}
+    result = {'name': '管理员的歌单', 'owner': 'administrator', 'songs': songs}
+    # Seed known file addresses with this already-required public list request.
+    # Do not resolve sources or expose addresses from any private playlist.
+    try:
+        addresses, mappings = [], []
+        for song, local in FILE_CACHE.peek_many(songs):
+            token = file_signature(local['id'], local['checksum'])
+            mappings.append((token, local['id'], local['checksum']))
+            addresses.append({'source': song['source'], 'id': song['id'], 'url': '/api/music/stream/' + token,
+                              'quality': local['quality'], 'file_cache_hit': True})
+        if addresses and FILE_CACHE.remember_tickets(mappings) == len(mappings):
+            result['cached_audio'] = addresses
+    except (OSError, ValueError, sqlite3.Error):
+        logger.warning('music_recommended_file_addresses_unavailable')
+    return result
 
 
 class ListName(BaseModel):

@@ -227,3 +227,75 @@ class FileRouteTests(unittest.TestCase):
             with cache.connection() as db: db.execute('UPDATE files SET pinned=0')
             self.assertEqual(self.client.delete(path,headers=self.headers('jackfei')).status_code,204)
             self.assertIsNone(cache.get(self.song,'128k'))
+
+    def test_persisted_file_address_plays_after_ram_expiry_and_restart_without_resolving(self):
+        cache, data = self.prepare()
+        with patch.object(music, 'FILE_CACHE', cache):
+            first = self.client.post('/api/music/resolve', json={'song': self.song}).json()
+            token = first['url'].rsplit('/', 1)[-1]
+            _, url, context = music.TICKETS[token]
+            music.TICKETS[token] = (0, url, context)
+            response = self.client.get(first['url'], headers={'Range': 'bytes=100-200'})
+            self.assertEqual(response.status_code, 206)
+            self.assertEqual(response.content, data[100:201])
+            music.TICKETS.clear()
+            restarted = MusicFiles(root=cache.root, index=cache.index, minimum_free=0)
+            self.addCleanup(restarted.close)
+            with patch.object(music, 'FILE_CACHE', restarted), patch.object(music, 'run_source', AsyncMock()) as runner:
+                response = self.client.get(first['url'], headers={'Range': 'bytes=200-400'})
+                self.assertEqual(response.status_code, 206)
+                self.assertEqual(response.content, data[200:401])
+                self.assertEqual(runner.await_count, 0)
+
+    def test_persisted_file_address_checks_signature_and_current_file_version(self):
+        cache, _ = self.prepare()
+        with patch.object(music, 'FILE_CACHE', cache):
+            first = self.client.post('/api/music/resolve', json={'song': self.song}).json()
+            music.TICKETS.clear()
+            with patch.object(music, 'SECRET_KEY', 'changed-key'):
+                self.assertEqual(self.client.get(first['url']).status_code, 410)
+            self.assertEqual(self.client.get('/api/music/stream/' + '0' * 64).status_code, 410)
+            entry = cache.get(self.song, '128k')
+            with cache.connection() as db:
+                db.execute('UPDATE files SET checksum=? WHERE id=?', ('c' * 64, entry['id']))
+            self.assertEqual(self.client.get(first['url']).status_code, 410)
+            expired = music.ticket('https://example.com/audio', 2, 'upstream')['url']
+            token = expired.rsplit('/', 1)[-1]
+            music.TICKETS[token] = (0, 'https://example.com/audio', None)
+            self.assertEqual(self.client.get(expired).status_code, 410)
+
+    def test_cache_only_lookup_never_runs_source_scripts(self):
+        cache, _ = self.prepare()
+        with patch.object(music, 'FILE_CACHE', cache), patch.object(music, 'run_source', AsyncMock()) as runner:
+            hit = self.client.post('/api/music/cached', json={'song': self.song})
+            self.assertEqual(hit.status_code, 200)
+            self.assertTrue(hit.json()['file_cache_hit'])
+            missing = self.client.post('/api/music/cached', json={'song': {**self.song, 'id': 'not-cached'}})
+            self.assertEqual(missing.status_code, 204)
+            self.assertEqual(runner.await_count, 0)
+
+    def test_recommendations_seed_only_public_cached_songs_without_promoting_lru(self):
+        from music_models import MusicList, MusicEntry
+        from models import User
+        import json
+        cache, _ = self.prepare()
+        with self.session() as db:
+            admin = db.query(User).filter_by(username='jackfei').one()
+            listing = MusicList(user_id=admin.id, kind='favorites', name='我喜欢')
+            db.add(listing); db.flush()
+            db.add(MusicEntry(list_id=listing.id, song_key='wy:123', song=json.dumps(self.song)))
+            db.commit()
+        with cache.connection() as db:
+            before = db.execute('SELECT used FROM files').fetchone()[0]
+        cache.clock = lambda: before + 1000
+        with patch.object(music, 'FILE_CACHE', cache), patch.object(music, 'run_source', AsyncMock()) as runner:
+            response = self.client.get('/api/music/recommended')
+            self.assertEqual(response.status_code, 200)
+            addresses = response.json()['cached_audio']
+            self.assertEqual(len(addresses), 1)
+            self.assertEqual(addresses[0]['source'], self.song['source'])
+            with cache.connection() as db:
+                self.assertEqual(db.execute('SELECT used FROM files').fetchone()[0], before)
+            music.TICKETS.clear()
+            self.assertEqual(self.client.get(addresses[0]['url'], headers={'Range': 'bytes=0-1'}).status_code, 206)
+            self.assertEqual(runner.await_count, 0)

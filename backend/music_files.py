@@ -56,9 +56,11 @@ class MusicFiles:
                 os.chmod(self.index.parent, 0o700)
             with closing(sqlite3.connect(self.index, timeout=2)) as db, db:
                 db.row_factory = sqlite3.Row
+                db.execute('PRAGMA foreign_keys=ON')
                 db.execute('CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, song_key TEXT, title TEXT, singer TEXT, title_key TEXT, singer_key TEXT, duration REAL, song TEXT, quality TEXT, mime TEXT, size INTEGER, checksum TEXT, created REAL, used REAL, pinned REAL DEFAULT 0, verified INTEGER DEFAULT 0)')
                 db.execute('CREATE INDEX IF NOT EXISTS file_recording ON files(title_key,singer_key,quality)')
                 db.execute('CREATE TABLE IF NOT EXISTS catalog (song_key TEXT PRIMARY KEY, title_key TEXT, singer_key TEXT, duration REAL, seen REAL)')
+                db.execute('CREATE TABLE IF NOT EXISTS file_tickets (token TEXT PRIMARY KEY, file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE, checksum TEXT NOT NULL)')
                 if os.name != 'nt':
                     os.chmod(self.index, 0o600)
                 yield db
@@ -83,7 +85,7 @@ class MusicFiles:
             raise ValueError('Invalid cache identifier')
         return self.root / (identifier + '.audio')
 
-    def _valid(self, db, row, pin=False):
+    def _valid(self, db, row, pin=False, touch=True):
         if row is None:
             return None
         path = self.path(row['id'])
@@ -91,8 +93,9 @@ class MusicFiles:
             db.execute('DELETE FROM files WHERE id=?', (row['id'],))
             return None
         now = self.clock()
-        db.execute('UPDATE files SET used=?, pinned=MAX(pinned,?) WHERE id=?',
-                   (now, now + max(600, row['duration'] + 120) if pin else 0, row['id']))
+        if touch:
+            db.execute('UPDATE files SET used=?, pinned=MAX(pinned,?) WHERE id=?',
+                       (now, now + max(600, row['duration'] + 120) if pin else 0, row['id']))
         result = dict(row)
         result['song'] = json.loads(result['song'])
         return result
@@ -101,25 +104,63 @@ class MusicFiles:
         if not self.enabled:
             return None
         with self.connection() as db:
-            row = db.execute('SELECT * FROM files WHERE id=?', (entry_key(song, quality),)).fetchone()
-            if row and row['title_key'] == text_key(song.get('name')) and row['singer_key'] == singer_key(song.get('singer')):
-                return self._valid(db, row)
-            # Unknown durations never merge across platform IDs. Keep version
-            # punctuation in titles; Live/remix/cover must not equal original.
-            duration = song.get('duration') or 0
-            if duration > 0 and song.get('singer') and self.trusted(db, song):
-                rows = db.execute('SELECT * FROM files WHERE verified=1 AND title_key=? AND singer_key=? AND quality=? AND ABS(duration-?)<=3 ORDER BY used DESC LIMIT 10',
-                                  (text_key(song.get('name')), singer_key(song['singer']), quality, duration)).fetchall()
-                for row in rows:
-                    value = self._valid(db, row)
-                    if value:
-                        return value
+            return self._get(db, song, quality)
+
+    def _get(self, db, song, quality, touch=True):
+        row = db.execute('SELECT * FROM files WHERE id=?', (entry_key(song, quality),)).fetchone()
+        if row and row['title_key'] == text_key(song.get('name')) and row['singer_key'] == singer_key(song.get('singer')):
+            return self._valid(db, row, touch=touch)
+        # Unknown durations never merge across IDs or across recording versions.
+        duration = song.get('duration') or 0
+        if duration > 0 and song.get('singer') and self.trusted(db, song):
+            rows = db.execute('SELECT * FROM files WHERE verified=1 AND title_key=? AND singer_key=? AND quality=? AND ABS(duration-?)<=3 ORDER BY used DESC LIMIT 10',
+                              (text_key(song.get('name')), singer_key(song['singer']), quality, duration)).fetchall()
+            for row in rows:
+                value = self._valid(db, row, touch=touch)
+                if value:
+                    return value
+
+    def peek_many(self, songs):
+        """One connection, no LRU promotion and no source/network calls."""
+        if not self.enabled:
+            return []
+        values = []
+        with self.connection() as db:
+            for song in songs[:500]:
+                local = self._get(db, song, '128k', touch=False) or self._get(db, song, '320k', touch=False)
+                if local:
+                    values.append((song, local))
+        return values
 
     def by_id(self, identifier, pin=False):
         if not self.enabled or not re.fullmatch(r'[a-f0-9]{64}', identifier):
             return None
         with self.connection() as db:
             return self._valid(db, db.execute('SELECT * FROM files WHERE id=?', (identifier,)).fetchone(), pin)
+
+    def remember_ticket(self, token, identifier, checksum):
+        return bool(self.remember_tickets([(token, identifier, checksum)]))
+
+    def remember_tickets(self, entries):
+        if not self.enabled:
+            return False
+        saved = 0
+        with self.connection() as db:
+            for token, identifier, checksum in entries:
+                if not re.fullmatch(r'[a-f0-9]{64}', token):
+                    continue
+                row = db.execute('SELECT checksum FROM files WHERE id=?', (identifier,)).fetchone()
+                if row and row['checksum'] == checksum:
+                    db.execute('INSERT OR REPLACE INTO file_tickets VALUES(?,?,?)', (token, identifier, checksum))
+                    saved += 1
+        return saved
+
+    def by_ticket(self, token):
+        if not self.enabled or not re.fullmatch(r'[a-f0-9]{64}', token):
+            return None
+        with self.connection() as db:
+            row = db.execute('SELECT f.* FROM files f JOIN file_tickets t ON t.file_id=f.id AND t.checksum=f.checksum WHERE t.token=?', (token,)).fetchone()
+            return self._valid(db, row)
 
     def remove(self, identifier):
         path = self.path(identifier)

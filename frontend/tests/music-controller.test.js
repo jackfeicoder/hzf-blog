@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { MusicController } from '../src/music/controller.js'
 import { music } from '../src/music/store.js'
 import { MusicApiError } from '../src/music/api.js'
+import { PlaybackAddresses } from '../src/music/playbackAddresses.js'
 class AudioMock {
   constructor() { this.handlers = {}; this.duration = 60; this.currentTime = 0; this.attributes = {}; this.played = 0 }
   addEventListener(k, fn) { this.handlers[k] = fn }
@@ -386,5 +387,56 @@ test('a delayed pause event from an older load cannot pause the new playback', a
   const a = new AudioMock(), c = new MusicController(a, async path => path.startsWith('/lyrics') ? {} : { url: '/audio', source_id: 1 })
   await c.play(song(1)); a.paused = false; a.handlers.pause()
   assert.equal(c.desired, true); assert.equal(music.get().status, 'playing'); assert.ok(c.timer)
+  c.destroy()
+})
+
+test('reopened cached playback assigns audio and plays synchronously without resolving or waiting for lyrics', async () => {
+  let stored; const disk = { getItem: () => stored, setItem: (key, value) => { stored = value } }
+  const url = '/api/music/stream/' + 'd'.repeat(64), addresses = new PlaybackAddresses(disk)
+  const first = new MusicController(new AudioMock(), async path => path.startsWith('/lyrics') || path === '/feedback' ? {} : { url, source_id: 0, file_cache_hit: true, quality: '128k', source_name: '本机缓存' }, undefined, addresses)
+  await first.play(song(1)); first.destroy()
+  const order = [], a = new AudioMock(), lyrics = deferred()
+  a.play = async () => { order.push('play'); a.handlers.playing() }
+  let resolves = 0
+  const second = new MusicController(a, async path => {
+    if (path.startsWith('/lyrics')) { order.push('lyrics'); return lyrics.promise }
+    if (path === '/feedback') return {}
+    resolves++; throw new Error('cached song must not resolve')
+  }, undefined, new PlaybackAddresses(disk))
+  const playback = second.play(song(1))
+  assert.equal(a.getAttribute('src'), url); assert.equal(resolves, 0)
+  assert.equal(music.get().sourceName, '本机缓存'); assert.equal(order[0], 'play')
+  await playback; second.destroy(); lyrics.resolve({})
+})
+
+test('an invalid remembered address resolves only after failure and replaces it after successful playback', async () => {
+  const addresses = new PlaybackAddresses({ getItem: () => null, setItem() {} })
+  const old = '/api/music/stream/' + 'e'.repeat(64), next = '/api/music/stream/' + 'f'.repeat(64)
+  addresses.put(song(1), '128k', { url: old, quality: '128k', file_cache_hit: true })
+  const a = new AudioMock(); let resolves = 0
+  const c = new MusicController(a, async path => {
+    if (path.startsWith('/lyrics') || path === '/feedback') return {}
+    resolves++; return { url: next, source_id: 0, source_name: '本机缓存', quality: '128k', file_cache_hit: true }
+  }, undefined, addresses)
+  await c.play(song(1)); assert.equal(resolves, 0)
+  a.currentTime = 12; await c.fallback('error')
+  assert.equal(resolves, 1); assert.equal(a.currentTime, 12)
+  assert.equal(addresses.get(song(1), '128k').url, next); c.destroy()
+})
+
+test('background cache-only discovery learns a newly completed file without restarting current audio', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const addresses = new PlaybackAddresses({ getItem: () => null, setItem() {} }), a = new AudioMock(), paths = []
+  const local = '/api/music/stream/' + 'a'.repeat(64)
+  const c = new MusicController(a, async path => {
+    if (path.startsWith('/lyrics') || path === '/feedback') return {}
+    paths.push(path)
+    return path === '/cached' ? { url: local, quality: '128k', file_cache_hit: true } : { url: '/upstream', source_id: 2 }
+  }, undefined, addresses)
+  await c.play(song(1)); t.mock.timers.tick(5000)
+  for (let i = 0; i < 6; i++) await Promise.resolve()
+  assert.deepEqual(paths, ['/resolve', '/cached']); assert.equal(a.getAttribute('src'), '/upstream')
+  assert.equal(addresses.get(song(1), '128k').url, local)
+  await c.play(song(1)); assert.deepEqual(paths, ['/resolve', '/cached']); assert.equal(a.getAttribute('src'), local)
   c.destroy()
 })
