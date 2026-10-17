@@ -2,8 +2,9 @@ const KEY = 'music-file-addresses-v1'
 const qualities = ['128k', '320k', 'flac', 'flac24bit']
 const storage = { getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) }
 const identity = (song, quality) => JSON.stringify([song.source, song.id, song.name, song.singer || '', song.album || '', quality])
+export const cacheFileURL = value => typeof value === 'string' && /^\/api\/music\/stream\/[a-f0-9]{64}(?:\?connection=[a-z0-9-]{1,64})?$/.test(value) ? value.split('?')[0] : null
 function clean(data) {
-  if (!data?.file_cache_hit || !/^\/api\/music\/stream\/[a-f0-9]{64}$/.test(data.url) || !qualities.includes(data.quality)) return null
+  if (!data?.file_cache_hit || !cacheFileURL(data.url) || !qualities.includes(data.quality)) return null
   return { url: data.url, quality: data.quality, file_cache_hit: true, cache_hit: true, source_id: 0, source_name: '本机缓存' }
 }
 
@@ -43,7 +44,13 @@ export class PlaybackAddresses {
     const byId = new Map(songs.map(song => [`${song.source}:${song.id}`, song]))
     for (const entry of entries) {
       const song = entry && byId.get(`${entry.source}:${entry.id}`)
-      if (song) this.put(song, '128k', entry, false)
+      if (song) {
+        const existing = this.get(song, '128k')
+        // Keep a successful fresh connection key for the same file version,
+        // instead of restoring the browser's previously stuck partial response.
+        if (existing && cacheFileURL(existing.url) === cacheFileURL(entry.url) && existing.quality === entry.quality) continue
+        this.put(song, '128k', entry, false)
+      }
     }
     this.persist()
   }

@@ -409,19 +409,24 @@ test('reopened cached playback assigns audio and plays synchronously without res
   await playback; second.destroy(); lyrics.resolve({})
 })
 
-test('an invalid remembered address resolves only after failure and replaces it after successful playback', async () => {
+test('a failed remembered file reconnects directly then refreshes through the bounded cache-only lookup', async () => {
   const addresses = new PlaybackAddresses({ getItem: () => null, setItem() {} })
   const old = '/api/music/stream/' + 'e'.repeat(64), next = '/api/music/stream/' + 'f'.repeat(64)
   addresses.put(song(1), '128k', { url: old, quality: '128k', file_cache_hit: true })
-  const a = new AudioMock(); let resolves = 0
+  const a = new AudioMock(); let resolves = 0, lookups = 0
   const c = new MusicController(a, async path => {
     if (path.startsWith('/lyrics') || path === '/feedback') return {}
-    resolves++; return { url: next, source_id: 0, source_name: '本机缓存', quality: '128k', file_cache_hit: true }
+    if (path === '/resolve') resolves++
+    if (path === '/cached') lookups++
+    return { url: next, source_id: 0, source_name: '本机缓存', quality: '128k', file_cache_hit: true }
   }, undefined, addresses)
   await c.play(song(1)); assert.equal(resolves, 0)
   a.currentTime = 12; await c.fallback('error')
-  assert.equal(resolves, 1); assert.equal(a.currentTime, 12)
-  assert.equal(addresses.get(song(1), '128k').url, next); c.destroy()
+  assert.equal(resolves, 0); assert.equal(lookups, 0); assert.equal(a.currentTime, 12)
+  assert.ok(addresses.get(song(1), '128k').url.startsWith(old + '?connection='))
+  await c.fallback('error')
+  assert.equal(resolves, 0); assert.equal(lookups, 1)
+  assert.ok(addresses.get(song(1), '128k').url.startsWith(next + '?connection=')); c.destroy()
 })
 
 test('background cache-only discovery learns a newly completed file without restarting current audio', async t => {

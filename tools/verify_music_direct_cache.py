@@ -20,7 +20,7 @@ def read(url, span=None):
     return status, headers, data
 
 
-def verify(base):
+def verify(base, expected_entry=None):
     start = time.monotonic()
     status, _, data = read(base + '/api/music/recommended')
     assert status == 200
@@ -40,12 +40,22 @@ def verify(base):
             assert headers.get('x-music-cache') == 'HIT', 'Expected local file cache'
             assert len(payload) == (2 if span == 'bytes=0-1' else 262144)
             ranges.append({'status': status, 'bytes': len(payload), 'seconds': round(time.monotonic() - begin, 3)})
+        status, headers, payload = read(base + item['url'] + '?connection=release-20261017', 'bytes=1000000-1262143')
+        assert status == 206 and headers.get('x-music-cache') == 'HIT' and len(payload) == 262144
         tested.append({'song': song['name'], 'ranges': ranges})
-    status, _, data = read(base + '/music?v=20261017-direct')
-    assert status == 200 and '/assets/index-B8w4Xls0.js' in data.decode(), 'Frontend entry is not the approved build'
+    status, _, data = read(base + '/music?v=20261017-seek')
+    match = re.search(r'src="(/assets/index-[\w-]+\.js)"', data.decode())
+    assert status == 200 and match, 'Missing frontend entry'
+    entry = match.group(1)
+    if expected_entry: assert entry == expected_entry, 'Frontend entry is not the approved build'
+    status, _, data = read(base + entry)
+    engine = re.search(r'assets/PlayerEngine-[\w-]+\.js', data.decode())
+    assert status == 200 and engine
+    status, _, data = read(base + '/' + engine.group())
+    assert status == 200 and b'?connection=' in data and b'seekRevision' in data, 'Missing recovery implementation'
     print(json.dumps({'songs': len(songs), 'cached_addresses': len(addresses), 'resolve_requests': 0,
-                      'tested': tested, 'seconds': round(time.monotonic() - start, 3), 'build': 'index-B8w4Xls0.js'}, ensure_ascii=False))
+                      'tested': tested, 'fresh_connection_ranges': len(tested), 'seconds': round(time.monotonic() - start, 3), 'build': entry}, ensure_ascii=False))
 
 
 if __name__ == '__main__':
-    verify(sys.argv[1] if len(sys.argv) > 1 else 'https://blog.120115.xyz:8443')
+    verify(sys.argv[1] if len(sys.argv) > 1 else 'https://blog.120115.xyz:8443', sys.argv[2] if len(sys.argv) > 2 else None)

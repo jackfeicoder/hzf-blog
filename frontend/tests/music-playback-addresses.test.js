@@ -55,3 +55,18 @@ test('public list seeds validated cache addresses once and does not seed private
   assert.equal(cache.entries.size, 1); assert.equal(writes, 1)
   assert.equal(cache.get({ ...song, id: 'private-other' }, '128k'), null)
 })
+
+test('only bounded connection keys survive reopening and public seeding preserves a working retry URL', () => {
+  const disk = storage(), cache = new PlaybackAddresses(disk)
+  const url = data.url + '?connection=abc-12'
+  assert.equal(cache.put(song, '128k', { ...data, url }), true)
+  const reopened = new PlaybackAddresses(disk)
+  reopened.seed([song], [{ ...data, source: song.source, id: song.id }])
+  assert.equal(reopened.get(song, '128k').url, url)
+  for (const suffix of ['?connection=', '?connection=' + 'a'.repeat(65), '?connection=abc&token=x', '?redirect=https://example.com', '#fragment']) {
+    assert.equal(cache.put(song, '128k', { ...data, url: data.url + suffix }), false)
+  }
+  const replacement = { ...data, url: '/api/music/stream/' + 'b'.repeat(64), source: song.source, id: song.id }
+  reopened.seed([song], [replacement])
+  assert.equal(reopened.get(song, '128k').url, replacement.url)
+})
