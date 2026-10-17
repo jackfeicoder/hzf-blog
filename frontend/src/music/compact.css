@@ -124,3 +124,28 @@
 .music-seek-track input::-moz-range-track{height:4px;background:transparent}
 .music-seek-track input::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border-radius:50%;background:var(--primary);border:0;box-shadow:0 0 0 3px var(--primary-soft)}
 .music-seek-track input::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--primary);border:0}
+
+/* Phone-only: pin library tabs and give the song list more of the screen. */
+@media(max-width:640px) {
+  body.music-workspace .main { padding-top:0; }
+  .music-page { margin-top:0;overflow:visible; }
+  .music-sidebar {
+    position:sticky;top:var(--topbar-h);z-index:40;
+    min-height:48px;padding:6px 10px;gap:6px;
+    background:var(--panel);border-bottom:1px solid var(--border);
+  }
+  .music-sidebar>button { min-height:36px;padding:6px 10px;gap:6px; }
+  .music-main { padding-top:10px; }
+  .music-heading,.music-recommended .music-heading { min-height:30px;margin-bottom:6px; }
+  .music-eyebrow { display:none; }
+  .music-heading h1 { margin:0;font-size:18px;line-height:1.35;letter-spacing:0; }
+  .music-main>.music-section-head { min-height:32px;margin-bottom:6px;gap:6px;flex-wrap:nowrap; }
+  .music-main>.music-section-head h3 { font-size:12px;line-height:1.4; }
+  .music-main>.music-section-head p { display:none; }
+  .music-main>.music-section-head>button { padding:5px 8px;font-size:11px; }
+  /* The shared glass theme may be 80% transparent. Playback surfaces stay solid. */
+  html body :is(.music-player-bar,.music-queue-popover,.music-settings-popover),
+  html[data-palette] body :is(.music-player-bar,.music-queue-popover,.music-settings-popover) {
+    background:var(--panel);opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none;
+  }
+}
