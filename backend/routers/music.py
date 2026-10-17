@@ -2,6 +2,7 @@ import asyncio
 from collections import OrderedDict, deque
 from datetime import datetime
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -19,7 +20,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
-from auth import get_current_user, require_superadmin
+from auth import SECRET_KEY, get_current_user, require_superadmin
 from database import get_db
 from music_models import MusicEntry, MusicList, MusicSource
 from music_http import fetch, open_http, target
@@ -333,8 +334,15 @@ def ticket(url, source_id, name, context=None):
     now = time.monotonic()
     if context is not None:
         context['audio_url'] = url
-    token = secrets.token_urlsafe(32)
+    # Opaque, versioned file tickets keep the browser cache useful across plays
+    # and service restarts. Upstream URLs retain random, short-lived tickets.
+    if context and context.get('file_id') and context.get('file_checksum'):
+        identity = 'music-file-v1:' + context['file_id'] + ':' + context['file_checksum']
+        token = hmac.new(SECRET_KEY.encode(), identity.encode(), hashlib.sha256).hexdigest()
+    else:
+        token = secrets.token_urlsafe(32)
     TICKETS[token] = (now + 1800, url, context)
+    TICKETS.move_to_end(token)
     while len(TICKETS) > 500:
         TICKETS.popitem(last=False)
     return {'url': '/api/music/stream/' + token, 'source_id': source_id, 'source_name': name, 'expires_in': 1800,
@@ -489,9 +497,9 @@ async def resolve(body: Resolve, request: Request, response: Response, db: Sessi
     # A refreshed playback ticket is a connection retry, not cache invalidation.
     # Keep preferring the complete server file, including on mobile errors.
     try:
-        local = FILE_CACHE.get(body.song.model_dump(), body.quality)
+        local = await asyncio.to_thread(FILE_CACHE.get, body.song.model_dump(), body.quality)
         if not local and body.quality == '128k':
-            local = FILE_CACHE.get(body.song.model_dump(), '320k')
+            local = await asyncio.to_thread(FILE_CACHE.get, body.song.model_dump(), '320k')
     except (OSError, ValueError, sqlite3.Error):
         local = None
     if local:
@@ -686,8 +694,8 @@ async def stream(token: str, request: Request):
         except (OSError, ValueError, sqlite3.Error):
             pass
     if context and context.get('file_id'):
-        local = FILE_CACHE.by_id(context['file_id'], pin=True)
-        if not local:
+        local = await asyncio.to_thread(FILE_CACHE.by_id, context['file_id'], pin=True)
+        if not local or local['checksum'] != context.get('file_checksum'):
             raise HTTPException(410, '本机缓存已更新，请重新播放')
         outgoing = {'Cache-Control': 'private, max-age=2592000', 'X-Content-Type-Options': 'nosniff',
                     'X-Music-Cache': 'HIT', 'ETag': '"' + local['checksum'] + '"'}

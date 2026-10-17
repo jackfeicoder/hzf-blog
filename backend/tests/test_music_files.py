@@ -183,12 +183,36 @@ class FileRouteTests(unittest.TestCase):
             refreshed = self.client.post('/api/music/resolve',json={'song':self.song,'refresh_token':token})
             self.assertEqual(refreshed.status_code,200,refreshed.text)
             self.assertTrue(refreshed.json()['file_cache_hit'])
-            self.assertNotEqual(refreshed.json()['url'],first['url'])
+            self.assertEqual(refreshed.json()['url'],first['url'])
             partial = self.client.get(refreshed.json()['url'],headers={'Range':'bytes=2000-2999'})
             self.assertEqual(partial.status_code,206)
             self.assertEqual(partial.content,data[2000:3000])
             self.assertEqual(runner.await_count,0)
             self.assertEqual(music.ROUTING.diagnostics()['recent'],[])
+
+    def test_file_ticket_survives_ticket_reset_and_versions_do_not_share_browser_cache(self):
+        cache, data = self.prepare()
+        with patch.object(music, 'FILE_CACHE', cache):
+            first = self.client.post('/api/music/resolve', json={'song': self.song}).json()
+            token = first['url'].rsplit('/', 1)[-1]
+            self.assertNotIn(cache.get(self.song, '128k')['id'], first['url'])
+            # A restart loses transient tickets, not the private signing key.
+            music.TICKETS.clear()
+            again = self.client.post('/api/music/resolve', json={'song': self.song}).json()
+            self.assertEqual(first['url'], again['url'])
+            partial = self.client.get(again['url'], headers={'Range': 'bytes=100-200'})
+            self.assertEqual(partial.content, data[100:201])
+            self.assertEqual(partial.headers['cache-control'], 'private, max-age=2592000')
+            entry = cache.get(self.song, '128k')
+            with cache.connection() as db:
+                db.execute('UPDATE files SET checksum=? WHERE id=?', ('b' * 64, entry['id']))
+            self.assertEqual(self.client.get(first['url']).status_code, 410)
+            changed = self.client.post('/api/music/resolve', json={'song': self.song}).json()
+            self.assertNotEqual(first['url'], changed['url'])
+            with patch.object(music, 'SECRET_KEY', 'rotated-test-secret'):
+                rotated = self.client.post('/api/music/resolve', json={'song': self.song}).json()
+            self.assertNotEqual(changed['url'], rotated['url'])
+            self.assertIn(token, music.TICKETS)
 
     def test_cache_management_is_admin_only_and_busy_files_are_protected(self):
         cache, _ = self.prepare()

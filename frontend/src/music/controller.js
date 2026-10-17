@@ -9,15 +9,25 @@ export class MusicController {
     this.wait = wait
     this.audio = audio; this.request = request; this.generation = 0; this.session = 0; this.desired = false; this.failures = []; this.attempts = 0; this.failedSongs = new Set()
     this.events = {
-      timeupdate: () => { if (this.url) { this.lastPosition = audio.currentTime || 0; music.progress({ time: this.lastPosition }); if (!audio.paused && this.lastPosition - this.recoveryStart >= 3) this.failedSongs.clear() } },
+      timeupdate: () => { if (this.url) {
+        const position = audio.currentTime || 0
+        if (position > this.lastPosition + .01) this.lastProgressAt = Date.now()
+        this.lastPosition = position; music.progress({ time: position })
+        if (!audio.paused && position - this.recoveryStart >= 3) { this.failedSongs.clear(); this.fileReconnects = 0; this.softRecovery = false }
+      } },
       durationchange: () => music.progress({ duration: Number.isFinite(audio.duration) ? audio.duration : 0 }),
       progress: () => music.progress({ buffered: bufferedRanges(audio) }),
       seeked: () => { this.clearTimer(); if (this.desired && audio.readyState < 3) this.watchdog() },
-      playing: () => { if (!this.desired) { audio.pause(); return } this.clearTimer(); music.set({ playing: true, status: 'playing', message: '' }); this.feedback('playing'); this.recordHistory() },
-      pause: () => music.set({ playing: false }),
+      playing: () => { if (!this.desired) { audio.pause(); return } this.lastProgressAt = Date.now(); this.clearTimer(); music.set({ playing: true, status: 'playing', message: '' }); this.feedback('playing'); this.recordHistory(); this.watchdog() },
+      pause: () => {
+        if (audio.paused === false) return // Ignore a queued pause from an older load that already resumed.
+        music.set({ playing: false })
+        // Respect a WebView/system pause; do not treat it as a broken source.
+        if (this.desired && this.url && !this.switching) { this.desired = false; this.clearTimer(); music.set({ status: 'paused' }) }
+      },
       ended: () => { if (this.desired) this.next(1, true) },
       error: () => { if (this.url && audio.getAttribute('src') === this.url && this.desired) this.fallback('error') },
-      waiting: () => { if (this.desired && this.url) { music.set({ status: 'buffering' }); this.watchdog() } },
+      waiting: () => { if (this.desired && this.url) { music.set({ status: 'buffering', playing: false }); this.watchdog() } },
       loadedmetadata: () => { if (this.desired) this.resume() },
     }
     for (const [event, fn] of Object.entries(this.events)) audio.addEventListener(event, fn)
@@ -29,12 +39,24 @@ export class MusicController {
   watchdog() {
     if (this.timer || this.seekingPreview) return
     const generation = this.generation, position = this.audio.currentTime || 0
+    this.lastProgressAt ??= Date.now()
     this.timer = setTimeout(() => {
       this.timer = null
-      if (!this.desired || generation !== this.generation) return
-      if (!this.audio.paused && this.audio.currentTime > position + .25) { music.set({ status: 'playing', playing: true }); return }
-      this.fallback('stalled')
-    }, 20000)
+      if (!this.desired || generation !== this.generation || !this.url) return
+      const advanced = this.audio.currentTime > position + .05
+      if (advanced) this.lastProgressAt = Date.now()
+      const idle = Date.now() - this.lastProgressAt
+      if (advanced && !this.audio.paused && this.audio.readyState >= 3) music.set({ status: 'playing', playing: true, message: '' })
+      if (idle >= 20000) { this.fallback('stalled'); return }
+      if (idle >= 8000 && !this.softRecovery && this.isFileCached) {
+        // First let the existing download continue. play() does not discard
+        // buffered bytes like src/load does, and it must not lock recovery.
+        this.softRecovery = true
+        music.set({ status: 'buffering', playing: false, message: '连接较慢，正在继续缓冲缓存歌曲…' })
+        this.resume()
+      }
+      this.watchdog()
+    }, 5000)
   }
   feedback(event) {
     const token = this.url?.match(/^\/api\/music\/stream\/([\w-]+)$/)?.[1]
@@ -74,7 +96,7 @@ export class MusicController {
   stop() {
     ++this.generation; this.lyricGeneration = (this.lyricGeneration || 0) + 1; this.desired = false; this.abort?.abort(); this.lyricAbort?.abort(); this.clearTimer(); this.url = null; this.lastPosition = 0
     this.failedSongs = new Set(); this.skipMessage = ''; this.audio.pause(); this.audio.removeAttribute('src'); this.audio.load()
-    this.seekingPreview = false
+    this.seekingPreview = false; this.lastProgressAt = null; this.isFileCached = false; this.fileReconnects = 0; this.softRecovery = false
     music.set({ playing: false, status: 'idle', sourceName: '', playbackSong: null, activeQuality: null, lyricsLoading: false }); music.progress({ time: 0, duration: 0, buffered: [] })
   }
   async play(song, queue, failedSongs = new Set()) {
@@ -97,16 +119,19 @@ export class MusicController {
   }
   async resolve(song, generation, seek = 0, gatewayRetry = false, refreshToken = '', continuation = 0) {
     this.abort?.abort(); this.abort = new AbortController(); this.url = null
-    music.set({ status: 'resolving', playing: false, message: gatewayRetry ? '音乐连接暂时中断，正在自动重试…' : this.failures.length ? '正在尝试下一个音源…' : this.skipMessage })
+    music.set({ status: this.isFileCached ? 'buffering' : 'resolving', playing: false, message: gatewayRetry ? '音乐连接暂时中断，正在自动重试…' : this.isFileCached ? '正在恢复缓存歌曲连接…' : this.failures.length ? '正在尝试下一个音源…' : this.skipMessage })
     try {
       const data = await this.request('/resolve', { method: 'POST', body: { song, quality: music.get().quality, attempted: this.attempted, deferred: this.deferred, refresh_token: refreshToken, allow_platform_fallback: true }, signal: this.abort.signal })
       if (generation !== this.generation) return
       this.deferred = data.deferred || this.deferred
       this.attempted = data.attempted || this.attempted; this.activeRoute = data.route_id || `${data.source_id}:${data.playback_song?.source || song.source}:${data.playback_song?.id || song.id}:${data.quality || music.get().quality}`
       this.url = data.url; this.seekAfterLoad = seek; this.lastPosition = seek; this.recoveryStart = seek
+      this.isFileCached = data.file_cache_hit === true; this.lastProgressAt = Date.now(); this.softRecovery = false
       this.audio.src = data.url; this.audio.load(); music.set({ sourceName: data.source_name, playbackSong: data.playback_song || song, activeQuality: data.quality || music.get().quality, status: this.desired ? 'buffering' : 'paused' })
       if (data.playback_song && songKey(data.playback_song) !== songKey(song)) this.lyrics(song, data.playback_song)
-      if (this.desired) { this.watchdog(); await this.resume() }
+      // A WebView play() promise may wait for data indefinitely. Releasing the
+      // resolver lets the watchdog recover instead of holding switching=true.
+      if (this.desired) { this.watchdog(); this.resume() }
     } catch (e) {
       if (generation !== this.generation) return
       // A transport error or batch budget never proves all interfaces failed.
@@ -140,11 +165,13 @@ export class MusicController {
   }
   async resume() {
     if (!this.url || !this.desired) return
-    const generation = this.generation
-    if (this.seekAfterLoad && Number.isFinite(this.audio.duration)) { this.audio.currentTime = Math.min(this.seekAfterLoad, Math.max(0, this.audio.duration - 0.2)); this.seekAfterLoad = 0 }
-    try { await this.audio.play() }
+    const generation = this.generation, url = this.url
+    try {
+      if (this.seekAfterLoad && Number.isFinite(this.audio.duration)) { this.audio.currentTime = Math.min(this.seekAfterLoad, Math.max(0, this.audio.duration - 0.2)); this.seekAfterLoad = 0 }
+      await this.audio.play()
+    }
     catch (e) {
-      if (generation !== this.generation) return
+      if (generation !== this.generation || url !== this.url) return
       if (e.name === 'NotAllowedError') { this.clearTimer(); this.desired = false; music.set({ status: 'paused', playing: false, message: '浏览器需要你再点一下播放按钮' }) }
       else if (e.name !== 'AbortError') this.fallback()
     }
@@ -155,12 +182,18 @@ export class MusicController {
       if (this.url) this.pendingFailure = { generation: this.generation, url: this.url, reason }
       return
     }
+    if (this.isFileCached && (this.fileReconnects || 0) >= 2) {
+      this.desired = false; this.clearTimer(); this.audio.pause()
+      music.set({ status: 'error', playing: false, message: '当前连接持续中断，歌曲缓存仍保留。请点播放重试。' })
+      return
+    }
+    if (this.isFileCached) this.fileReconnects = (this.fileReconnects || 0) + 1
     this.switching = true; this.clearTimer(); const generation = ++this.generation, seek = this.audio.currentTime || this.seekAfterLoad || this.lastPosition || 0
     const oldUrl = this.url, route = this.activeRoute
     this.feedback(reason)
     const refresh = !this.refreshed.has(route)
     if (refresh) { this.refreshed.add(route); this.attempted = this.attempted.filter(item => item !== route) }
-    else { this.attempted = [...new Set([...this.attempted, route])]; this.failures.push(Number(route?.split(':')[0])) }
+    else if (!this.isFileCached) { this.attempted = [...new Set([...this.attempted, route])]; this.failures.push(Number(route?.split(':')[0])) }
     const token = refresh ? oldUrl?.match(/^\/api\/music\/stream\/([\w-]+)$/)?.[1] || '' : ''
     this.audio.pause(); this.url = null
     ++this.attempts // Only explicit server exhaustion may skip the song.
@@ -179,10 +212,18 @@ export class MusicController {
   }
   toggle() {
     if (this.desired) { this.desired = false; this.clearTimer(); this.audio.pause(); music.set({ status: 'paused', playing: false }); return }
-    this.desired = true
+    if (music.get().status === 'error') { this.retry(); return }
+    this.desired = true; this.lastProgressAt = Date.now(); this.softRecovery = false
     if (this.url) { this.watchdog(); this.resume() }
     else if (music.get().current) this.play(music.get().current)
     else if (music.get().queue.length) this.play(music.get().queue[0])
+  }
+  retry() {
+    const song = music.get().current
+    if (!song) return
+    this.fileReconnects = 0; this.refreshed = new Set(); this.failures = []; this.attempted = []; this.deferred = []
+    if (this.isFileCached && this.url) { this.desired = true; return this.fallback('manual') }
+    return this.play(song)
   }
   next(direction = 1, ended = false) {
     const state = music.get(), index = nextIndex(state.queue, state.current, state.mode, direction, ended)
@@ -194,7 +235,7 @@ export class MusicController {
     if (!Number.isFinite(time) || !Number.isFinite(this.audio.duration)) return
     this.clearTimer()
     const position = Math.min(Math.max(0, time), this.audio.duration)
-    this.lastPosition = position; this.recoveryStart = position; this.audio.currentTime = position
+    this.lastPosition = position; this.recoveryStart = position; this.lastProgressAt = Date.now(); this.softRecovery = false; this.audio.currentTime = position
     music.progress({ time: position })
     if (this.desired) this.watchdog()
   }

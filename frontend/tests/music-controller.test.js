@@ -307,3 +307,84 @@ test('pause during continuation wait cancels further requests without advancing'
   assert.equal(calls,1); assert.equal(music.get().current.id,'1'); assert.equal(c.desired,false)
   c.destroy()
 })
+
+test('one second of progress followed by buffering still triggers recovery', t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 100000 })
+  const a = new AudioMock(), c = new MusicController(a, async () => ({})), recoveries = []
+  a.paused = false; a.readyState = 2; c.url = '/cached'; c.desired = true
+  c.fallback = reason => recoveries.push(reason)
+  c.lastProgressAt = Date.now(); c.watchdog()
+  t.mock.timers.tick(1000); a.currentTime = 1; a.handlers.timeupdate(); a.handlers.waiting()
+  t.mock.timers.tick(5000)
+  assert.equal(music.get().status, 'buffering'); assert.ok(c.timer)
+  // Each check sees no recent progress, rather than counting the old first second.
+  for (let i = 0; i < 5; i++) t.mock.timers.tick(5000)
+  assert.deepEqual(recoveries, ['stalled']); c.destroy()
+})
+
+test('continuous advancement keeps monitoring; seek resets the stall budget', t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 100000 })
+  const a = new AudioMock(), c = new MusicController(a, async () => ({})), recoveries = []
+  a.paused = false; a.readyState = 4; c.url = '/audio'; c.desired = true
+  c.fallback = reason => recoveries.push(reason); c.watchdog()
+  for (let i = 1; i <= 8; i++) { a.currentTime = i * 5; a.handlers.timeupdate(); t.mock.timers.tick(5000) }
+  assert.equal(music.get().status, 'playing'); assert.ok(c.timer); assert.deepEqual(recoveries, [])
+  c.seek(20); t.mock.timers.tick(5000); assert.deepEqual(recoveries, [])
+  c.destroy(); t.mock.timers.tick(30000); assert.deepEqual(recoveries, [])
+})
+
+test('cached buffering tries play without clearing buffered bytes or making a resolver request', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 100000 })
+  const a = new AudioMock(); let loads = 0, resolves = 0
+  a.load = () => loads++; a.play = async () => { a.played++ }
+  const c = new MusicController(a, async () => { resolves++; return {} })
+  a.paused = false; a.readyState = 2; a.src = '/same-cached-file'
+  c.url = '/same-cached-file'; c.desired = true; c.isFileCached = true; c.watchdog()
+  t.mock.timers.tick(5000); t.mock.timers.tick(5000); await Promise.resolve()
+  assert.equal(a.played, 1); assert.equal(loads, 0); assert.equal(resolves, 0)
+  assert.equal(a.getAttribute('src'), '/same-cached-file'); assert.equal(music.get().status, 'buffering')
+  c.destroy()
+})
+
+test('a pending WebView play promise does not lock fallback or subsequent connection recovery', async () => {
+  const a = new AudioMock(), pending = deferred(); let resolves = 0
+  a.play = () => pending.promise
+  const c = new MusicController(a, async path => path.startsWith('/lyrics') || path === '/feedback' ? {} : ({ url: '/cached', source_id: 0, file_cache_hit: true, source_name: '本机缓存', calls: ++resolves }))
+  await c.play(song(1)); await c.fallback('stalled')
+  assert.equal(c.switching, false); assert.equal(resolves, 2)
+  await c.fallback('stalled'); assert.equal(resolves, 3)
+  c.destroy(); pending.resolve(); await Promise.resolve()
+})
+
+test('repeated cached connection errors pause this song without erasing cache or skipping the queue', async () => {
+  const a = new AudioMock(), bodies = []
+  const c = new MusicController(a, async (path, options) => {
+    if (path.startsWith('/lyrics') || path === '/feedback') return {}
+    bodies.push(options.body); return { url: '/cached', source_id: 0, file_cache_hit: true, source_name: '本机缓存' }
+  })
+  await c.play(song(1), [song(1), song(2)])
+  await c.fallback('stalled'); await c.fallback('error'); await c.fallback('stalled')
+  assert.equal(bodies.length, 3); assert.equal(music.get().current.id, '1')
+  assert.equal(c.desired, false); assert.equal(c.failedSongs.size, 0); assert.match(music.get().message, /缓存仍保留/)
+  assert.ok(bodies.every(body => !body.attempted.some(route => route.startsWith('0:'))))
+  a.currentTime = 25
+  await c.retry()
+  assert.equal(bodies.length, 4); assert.equal(c.desired, true); assert.equal(a.currentTime, 25)
+  assert.equal(c.fileReconnects, 1)
+  c.destroy()
+})
+
+test('system/native pause is respected instead of triggering an automatic source change', async () => {
+  const a = new AudioMock(); let resolves = 0
+  const c = new MusicController(a, async path => path.startsWith('/lyrics') ? {} : ({ url: '/audio', source_id: 1, count: ++resolves }))
+  await c.play(song(1)); a.paused = true; a.handlers.pause()
+  assert.equal(c.desired, false); assert.equal(c.timer, null); assert.equal(music.get().status, 'paused'); assert.equal(resolves, 1)
+  c.destroy()
+})
+
+test('a delayed pause event from an older load cannot pause the new playback', async () => {
+  const a = new AudioMock(), c = new MusicController(a, async path => path.startsWith('/lyrics') ? {} : { url: '/audio', source_id: 1 })
+  await c.play(song(1)); a.paused = false; a.handlers.pause()
+  assert.equal(c.desired, true); assert.equal(music.get().status, 'playing'); assert.ok(c.timer)
+  c.destroy()
+})
