@@ -25,6 +25,9 @@ def pack():
                 for name in baseline_names}
     baseline['frontend/src/components/InviteManager.jsx'] = None
     paths = [local / name for name in FILES]
+    # A runtime compatibility test locates this fixture relative to its file.
+    # Package it for tests only; it is deliberately absent from deployment FILES.
+    paths += [local / 'backend/music_runtime.cjs']
     paths += list((local / 'backend/tests').glob('test_*.py'))
     paths += list((local / 'frontend/dist').rglob('*'))
     paths += [local / 'tools' / name for name in ('deploy_invitations.py', 'deploy_study.py', 'deploy_music_reliability.py')]
