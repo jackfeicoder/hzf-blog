@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
-import { api, getToken } from '../api'
+import { api } from '../api'
 import { UserAvatar } from '../components/Layout'
 import BioText from '../components/BioText'
 import { AUTHOR_LINKS, authorIntroduction, welcomeHistory } from '../welcome/policy'
@@ -38,11 +38,11 @@ export default function Welcome({ introductory = false }) {
   const [authorFailed, setAuthorFailed] = useState(false)
   useEffect(() => {
     let active = true
-    api.getUser('administrator').then(value => { if (active) setAuthor(value) })
+    api.welcomeAuthor().then(value => { if (active) setAuthor(value) })
       .catch(() => { if (active) setAuthorFailed(true) })
     return () => { active = false }
   }, [])
-  if (introductory && (user || getToken())) return <Navigate to="/" replace />
+  if (introductory && user) return <Navigate to="/" replace />
   if (introductory && loading) return <div className="container empty">正在确认登录状态…</div>
   const intro = authorIntroduction(author?.bio)
   const entry = user ? '/' : '/register'

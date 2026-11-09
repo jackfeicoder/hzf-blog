@@ -318,7 +318,7 @@ export default function Layout({ children }) {
           <span>🏠</span>
           首页
         </NavLink>
-        <NavLink to="/rank">
+        <NavLink to={user ? '/rank' : '/welcome'}>
           <span>🔥</span>
           排行
         </NavLink>

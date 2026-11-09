@@ -70,14 +70,14 @@ def register(data: schemas.InvitedRegisterIn, request: Request, db: Session = De
     consume_security_attempt(("register-ip", get_client_ip(request)), limit=10)
     if len(data.password.encode("utf-8")) > 72:
         raise HTTPException(400, "密码长度请控制在 72 字节内")
+    if db.query(models.User).filter(models.User.username == data.username).first():
+        raise HTTPException(status_code=409, detail="用户名已存在，请登录或使用其他用户名")
     invite = None
     if invitation_required(db):
         code = data.invite_code.upper()
         invite = db.query(models.RegistrationInvite).filter_by(code=code, revoked=False, used_at=None).first()
         if invite is None:
             raise HTTPException(400, "邀请码无效、已使用或已作废，请联系管理员")
-    if db.query(models.User).filter(models.User.username == data.username).first():
-        raise HTTPException(status_code=400, detail="用户名已存在")
     user = models.User(
         username=data.username,
         password_hash=hash_password(data.password),
@@ -99,6 +99,14 @@ def register(data: schemas.InvitedRegisterIn, request: Request, db: Session = De
         db.rollback()
         raise HTTPException(409, "用户名已存在或邀请码已使用，请重试")
     return schemas.TokenOut(access_token=create_access_token(user.username, user))
+
+
+@router.get("/welcome-author")
+def welcome_author(db: Session = Depends(get_db)):
+    author = db.query(models.User).filter_by(username='jackfei').first()
+    if author is None:
+        raise HTTPException(404, '作者信息尚未配置')
+    return {**schemas.PublicUserBrief.model_validate(author).model_dump(), 'bio': author.bio or ''}
 
 
 def invitation_out(invite):

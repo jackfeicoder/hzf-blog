@@ -8,6 +8,7 @@ import AppearanceProvider from './appearance/AppearanceContext'
 import AppearanceHost from './appearance/AppearanceHost'
 import WelcomeGate from './welcome/WelcomeGate'
 import AdminOnly from './components/AdminOnly'
+import GuestAccess from './components/GuestAccess'
 
 const PostPage = lazy(() => import('./pages/PostPage'))
 const Editor = lazy(() => import('./pages/Editor'))
@@ -32,7 +33,7 @@ export default function App() {
         <AppearanceHost />
         <MusicHost />
         <Layout>
-          <Suspense fallback={<div className="container empty">正在加载页面…</div>}><Routes>
+          <GuestAccess><Suspense fallback={<div className="container empty">正在加载页面…</div>}><Routes>
             <Route path="/" element={<WelcomeGate><Home /></WelcomeGate>} />
             <Route path="/welcome" element={<Welcome introductory />} />
             <Route path="/about" element={<Welcome />} />
@@ -50,7 +51,7 @@ export default function App() {
             <Route path="/admin" element={<Admin />} />
             <Route path="/study" element={<Suspense fallback={<div className="container">正在加载学习打卡…</div>}><Study /></Suspense>} />
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes></Suspense>
+          </Routes></Suspense></GuestAccess>
         </Layout>
       </BrowserRouter>
       </AppearanceProvider>

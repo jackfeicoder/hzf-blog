@@ -4,7 +4,7 @@ import { useAuth } from '../AuthContext'
 import { api } from '../api'
 
 export default function Register() {
-  const { register } = useAuth()
+  const { register, user, loading } = useAuth()
   const nav = useNavigate()
   const [username, setUsername] = useState('')
   const [nickname, setNickname] = useState('')
@@ -37,6 +37,11 @@ export default function Register() {
     }
   }
 
+  if (loading) return <div className="container empty">正在确认登录状态…</div>
+  if (user) return <div className="container panel auth-card"><h2>当前已登录</h2>
+    <p>当前账号：{user.nickname || user.username}（用户名：{user.username}）。注册新账号请先退出当前账号。</p>
+    <Link className="btn primary" to="/">返回首页</Link></div>
+
   return (
     <div className="auth-page">
       <form className="panel auth-card" onSubmit={onSubmit}>
@@ -55,7 +60,7 @@ export default function Register() {
           />
         </label>
         <label>
-          昵称（可选）
+          昵称（可选，可重复）
           <input value={nickname} onChange={(e) => setNickname(e.target.value)} />
         </label>
         <label>

@@ -10,19 +10,24 @@ from deploy_study import release
 from deploy_music_reliability import ROOT, normalized_hash, state_fingerprint
 
 FILES = [
+    "backend/main.py", "backend/access_policy.py",
     "backend/models.py", "backend/schemas.py", "backend/routers/auth_router.py",
     "backend/routers/visitors.py", "frontend/src/api.js", "frontend/src/AuthContext.jsx",
     "frontend/src/pages/Admin.jsx", "frontend/src/pages/Register.jsx",
     "frontend/src/pages/Visitors.jsx", "frontend/src/components/InviteManager.jsx",
+    "frontend/src/App.jsx", "frontend/src/navigation.js", "frontend/src/music/MusicHost.jsx",
+    "frontend/src/components/Layout.jsx", "frontend/src/components/GuestAccess.jsx", "frontend/src/pages/Welcome.jsx",
 ]
 
 def pack():
     local = Path(__file__).resolve().parents[1]
     baseline_names = subprocess.check_output(
-        ['git', 'ls-tree', '-r', '--name-only', '03b5286', 'frontend/src'], cwd=local, text=True,
-    ).splitlines() + [name for name in FILES if name.startswith('backend/')]
-    baseline = {name: normalized_hash(subprocess.check_output(['git', 'show', '03b5286:' + name], cwd=local))
+        ['git', 'ls-tree', '-r', '--name-only', '68e99d6', 'frontend/src'], cwd=local, text=True,
+    ).splitlines() + [name for name in FILES if name.startswith('backend/') and name != 'backend/access_policy.py']
+    baseline = {name: normalized_hash(subprocess.check_output(['git', 'show', '68e99d6:' + name], cwd=local))
                 for name in baseline_names}
+    baseline['backend/access_policy.py'] = None
+    baseline['frontend/src/components/GuestAccess.jsx'] = None
     paths = [local / name for name in FILES]
     # A runtime compatibility test locates this fixture relative to its file.
     # Package it for tests only; it is deliberately absent from deployment FILES.

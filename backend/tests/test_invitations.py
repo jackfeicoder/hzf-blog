@@ -103,7 +103,7 @@ class InvitationTests(unittest.TestCase):
 
     def test_existing_username_and_failed_commit_do_not_consume_code(self):
         invite = self.create()
-        self.assertEqual(self.register(invite['code'], 'reader').status_code, 400)
+        self.assertEqual(self.register(invite['code'], 'reader').status_code, 409)
         with patch.object(auth_router, 'hash_password', side_effect=RuntimeError('fixture')):
             with self.assertRaises(RuntimeError):
                 self.register(invite['code'])
@@ -135,6 +135,29 @@ class InvitationTests(unittest.TestCase):
         for body in ({'invite_required': 'false'}, {'invite_required': 0}, {'invite_required': False, 'extra': 1}):
             self.assertEqual(self.client.put('/api/auth/registration-settings', headers=self.headers(), json=body).status_code, 422)
         self.assertTrue(self.client.get('/api/auth/registration-settings').json()['invite_required'])
+
+    def test_duplicate_registration_never_logs_in_or_changes_existing_password(self):
+        invite = self.create()
+        for name in ('reader', ' reader ', 'reader  '):
+            result = self.register(invite['code'], name)
+            self.assertEqual(result.status_code, 409, result.text)
+            self.assertNotIn('access_token', result.json())
+        with self.sessions() as db:
+            self.assertEqual(db.query(models.User).count(), 3)
+            self.assertEqual(db.get(models.User, self.ids['reader']).password_hash, self.password_hash)
+        row = self.client.get('/api/auth/invitations', headers=self.headers()).json()['items'][0]
+        self.assertEqual(row['status'], 'available')
+        self.client.put('/api/auth/registration-settings', headers=self.headers(), json={'invite_required': False})
+        self.assertEqual(self.register('', 'reader').status_code, 409)
+
+    def test_concurrent_same_username_with_two_invitations_creates_one_account(self):
+        codes = [self.create()['code'], self.create()['code']]
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda code: self.register(code, 'same-reader').status_code, codes))
+        self.assertEqual(sorted(results), [200, 409], results)
+        with self.sessions() as db:
+            self.assertEqual(db.query(models.User).filter_by(username='same-reader').count(), 1)
+            self.assertEqual(db.query(models.RegistrationInvite).filter(models.RegistrationInvite.used_at.is_not(None)).count(), 1)
 
     def test_open_registration_persists_and_preserves_codes_when_reenabled(self):
         invite = self.create()

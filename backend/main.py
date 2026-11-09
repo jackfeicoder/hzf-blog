@@ -1,13 +1,14 @@
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from image_static import ImageStaticFiles
 
 import models  # noqa: F401  确保模型注册到 Base.metadata
 from auth import hash_password
+from access_policy import require_site_access
 from database import Base, SessionLocal, engine
 from routers import auth_router, comments, posts, users, upload, notifications, visitors
 from routers.chat import router as chat_router
@@ -57,7 +58,7 @@ async def lifespan(app: FastAPI):
     FILE_CACHE.close()
 
 
-app = FastAPI(title="Personal Blog API", lifespan=lifespan)
+app = FastAPI(title="Personal Blog API", lifespan=lifespan, dependencies=[Depends(require_site_access)])
 
 app.add_middleware(
     CORSMiddleware,
