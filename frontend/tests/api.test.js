@@ -43,6 +43,18 @@ test('registration sends invitation and management uses authenticated uncached e
   assert.equal(calls[4].options.headers.Authorization, 'Bearer admin-session-fixture')
 })
 
+test('registration settings read fresh and administrator updates carry boolean and session', async () => {
+  await api.registrationSettings()
+  await api.registrationSettings()
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].path, '/api/auth/registration-settings')
+  setToken('admin-session-fixture')
+  await api.saveRegistrationSettings(false)
+  assert.equal(calls[2].options.method, 'PUT')
+  assert.equal(calls[2].options.headers.Authorization, 'Bearer admin-session-fixture')
+  assert.deepEqual(JSON.parse(calls[2].options.body), { invite_required: false })
+})
+
 test('home requests share cached responses with sidebars', async () => {
   await Promise.all([api.listPosts(), api.listPosts()])
   await api.listPosts()

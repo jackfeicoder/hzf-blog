@@ -122,6 +122,8 @@ export const api = {
   register: (username, password, nickname, invite_code) =>
     request('/api/auth/register', { method: 'POST', body: { username, password, nickname, invite_code } }),
   invitations: (page = 1) => request(`/api/auth/invitations?page=${page}`),
+  registrationSettings: () => request('/api/auth/registration-settings'),
+  saveRegistrationSettings: invite_required => request('/api/auth/registration-settings', { method: 'PUT', body: { invite_required } }),
   createInvitation: () => request('/api/auth/invitations', { method: 'POST' }),
   revokeInvitation: id => request(`/api/auth/invitations/${id}`, { method: 'DELETE' }),
   login: (username, password) =>

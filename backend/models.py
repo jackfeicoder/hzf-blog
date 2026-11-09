@@ -40,6 +40,12 @@ class User(Base):
     appearance = relationship("UserAppearance", uselist=False, cascade="all, delete-orphan")
 
 
+class RegistrationSettings(Base):
+    __tablename__ = "registration_settings"
+    id = Column(Integer, primary_key=True)
+    invite_required = Column(Boolean, nullable=False, default=True)
+
+
 class RegistrationInvite(Base):
     """Single-use registration credentials, visible only to the site owner."""
     __tablename__ = "registration_invites"

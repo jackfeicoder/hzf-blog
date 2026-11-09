@@ -28,16 +28,17 @@ def check(path, expected, body=None):
 check('/api/health', 200)
 check('/api/auth/invitations', 401)
 check('/api/visitors', 401)
-validation = check('/api/auth/register', 422, {'username': 'registration-check-only', 'password': 'not-a-real-password'})
-assert any('invite_code' in item['loc'] for item in validation['detail'])
+settings = check('/api/auth/registration-settings', 200)
+assert settings == {'invite_required': True}, 'Expected invitation-required default after this release'
+validation = check('/api/auth/register', 400, {'username': 'registration-check-only', 'password': 'not-a-real-password'})
+assert '邀请码' in validation['detail']
 schema = check('/openapi.json', 200)
-required = schema['components']['schemas']['InvitedRegisterIn']['required']
-assert 'invite_code' in required
+assert '/api/auth/registration-settings' in schema['paths']
 assert '/api/auth/invitations/{invite_id}' in schema['paths']
 if len(sys.argv) > 1:
     with sqlite3.connect('file:' + str(ROOT / 'backend/blog.db') + '?mode=ro', uri=True) as live:
         with sqlite3.connect('file:' + str(Path(sys.argv[1]) / 'blog.db') + '?mode=ro', uri=True) as before:
-            for table in ('users', 'music_sources', 'music_lists', 'music_entries', 'site_appearance'):
+            for table in ('users', 'music_sources', 'music_lists', 'music_entries', 'site_appearance', 'registration_invites'):
                 assert live.execute('SELECT * FROM ' + table + ' ORDER BY 1').fetchall() == before.execute('SELECT * FROM ' + table + ' ORDER BY 1').fetchall(), table + ' changed; inspect concurrent user activity'
         assert live.execute("SELECT name FROM sqlite_master WHERE name='registration_invites'").fetchone()
         print('EXISTING_USERS_MUSIC_AND_APPEARANCE_UNCHANGED')

@@ -19,11 +19,10 @@ FILES = [
 def pack():
     local = Path(__file__).resolve().parents[1]
     baseline_names = subprocess.check_output(
-        ['git', 'ls-tree', '-r', '--name-only', 'ac84ff6', 'frontend/src'], cwd=local, text=True,
+        ['git', 'ls-tree', '-r', '--name-only', '03b5286', 'frontend/src'], cwd=local, text=True,
     ).splitlines() + [name for name in FILES if name.startswith('backend/')]
-    baseline = {name: normalized_hash(subprocess.check_output(['git', 'show', 'ac84ff6:' + name], cwd=local))
+    baseline = {name: normalized_hash(subprocess.check_output(['git', 'show', '03b5286:' + name], cwd=local))
                 for name in baseline_names}
-    baseline['frontend/src/components/InviteManager.jsx'] = None
     paths = [local / name for name in FILES]
     # A runtime compatibility test locates this fixture relative to its file.
     # Package it for tests only; it is deliberately absent from deployment FILES.
@@ -49,7 +48,7 @@ def publish(stage):
             raise RuntimeError('Production changed since inspection: ' + name)
     before = state_fingerprint()
     audio = {p: (p.stat().st_size, p.stat().st_mtime_ns) for p in (ROOT / 'backend/.music-cache').glob('*.audio')}
-    backup = release(stage, files=FILES, required_paths=("/api/auth/invitations", "/api/visitors"))
+    backup = release(stage, files=FILES, required_paths=("/api/auth/invitations", "/api/auth/registration-settings", "/api/visitors"))
     after = state_fingerprint()
     assert before['sources'] == after['sources'] and before['appearance'] == after['appearance'], 'Inspect runtime settings'
     assert all(p.is_file() and (p.stat().st_size, p.stat().st_mtime_ns) == stats for p, stats in audio.items()), 'Inspect audio cache'

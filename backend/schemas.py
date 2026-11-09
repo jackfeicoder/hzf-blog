@@ -22,7 +22,12 @@ class RegisterIn(BaseModel):
 
 
 class InvitedRegisterIn(RegisterIn):
-    invite_code: str = Field(pattern=r"^[A-Za-z0-9]{6}$")
+    invite_code: str = Field(default="", max_length=6)
+
+
+class RegistrationSettingsIn(BaseModel):
+    invite_required: bool = Field(strict=True)
+    model_config = {"extra": "forbid"}
 
 
 class LoginIn(BaseModel):

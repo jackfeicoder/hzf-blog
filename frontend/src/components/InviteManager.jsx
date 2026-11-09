@@ -11,9 +11,13 @@ export default function InviteManager() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [freshCode, setFreshCode] = useState('')
+  const [settings, setSettings] = useState(null)
   const load = useCallback(async () => {
     setLoading(true)
-    try { setData(await api.invitations(page)); setError('') }
+    try {
+      const [invites, policy] = await Promise.all([api.invitations(page), api.registrationSettings()])
+      setData(invites); setSettings(policy); setError('')
+    }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }, [page])
@@ -31,6 +35,20 @@ export default function InviteManager() {
   }
   return <section className="panel admin-edit">
     <h2>注册邀请码</h2>
+    <div className="admin-row">
+      <div className="admin-row-content"><strong>开启邀请注册</strong>
+        <small>{settings === null ? '正在读取设置…' : settings.invite_required ? '已开启：新用户必须填写邀请码' : '已关闭：新用户可以直接注册'}。已有用户登录不受影响。</small></div>
+      <button type="button" role="switch" aria-label="开启邀请注册" aria-checked={settings?.invite_required ?? true}
+        className={`btn ${settings?.invite_required ? 'primary' : 'ghost'}`} disabled={busy || loading || settings === null}
+        onClick={() => {
+          const next = !settings.invite_required
+          if (window.confirm(next ? '开启邀请注册？之后的新注册必须填写邀请码。' : '关闭邀请注册？所有访客都可以直接注册账号。')) mutate(async () => {
+            const saved = await api.saveRegistrationSettings(next); setSettings(saved)
+            setMessage(saved.invite_required ? '已开启邀请注册' : '已开放注册')
+          })
+        }}>{settings === null ? '读取中…' : settings.invite_required ? '已开启' : '已关闭'}</button>
+    </div>
+    <h3>邀请码生成与管理</h3>
     <p className="muted">仅管理员可生成和管理。6位随机字母数字，每码仅可注册一个账号；已有用户登录不受影响。</p>
     {error && <p className="admin-error" role="alert">{error}</p>}
     {message && <p role="status">{message}</p>}

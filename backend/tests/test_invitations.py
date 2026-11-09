@@ -82,7 +82,7 @@ class InvitationTests(unittest.TestCase):
 
     def test_required_invalid_and_revoked_invitation(self):
         missing = self.client.post('/api/auth/register', json={'username': 'new-reader', 'password': 'new-password'})
-        self.assertEqual(missing.status_code, 422)
+        self.assertEqual(missing.status_code, 400)
         self.assertEqual(self.register('ABC123').status_code, 400)
         invite = self.create()
         self.assertEqual(self.client.delete(f"/api/auth/invitations/{invite['id']}", headers=self.headers()).status_code, 204)
@@ -121,6 +121,39 @@ class InvitationTests(unittest.TestCase):
         for _ in range(10):
             self.assertEqual(self.register('ABC123').status_code, 400)
         self.assertEqual(self.register('ABC123').status_code, 429)
+
+    def test_settings_default_private_write_and_strict_validation(self):
+        response = self.client.get('/api/auth/registration-settings')
+        self.assertEqual(response.json(), {'invite_required': True})
+        self.assertIn('no-store', response.headers['cache-control'])
+        with self.sessions() as db:
+            self.assertEqual(db.query(models.RegistrationSettings).count(), 0)
+        for name in (None, 'reader', 'legacy-admin'):
+            headers = self.headers(name) if name else {}
+            response = self.client.put('/api/auth/registration-settings', headers=headers, json={'invite_required': False})
+            self.assertEqual(response.status_code, 403 if name else 401)
+        for body in ({'invite_required': 'false'}, {'invite_required': 0}, {'invite_required': False, 'extra': 1}):
+            self.assertEqual(self.client.put('/api/auth/registration-settings', headers=self.headers(), json=body).status_code, 422)
+        self.assertTrue(self.client.get('/api/auth/registration-settings').json()['invite_required'])
+
+    def test_open_registration_persists_and_preserves_codes_when_reenabled(self):
+        invite = self.create()
+        saved = self.client.put('/api/auth/registration-settings', headers=self.headers(), json={'invite_required': False})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        with self.sessions() as db:
+            self.assertFalse(db.get(models.RegistrationSettings, 1).invite_required)
+        # No in-memory policy: a fresh request/session observes the saved state.
+        self.assertFalse(self.client.get('/api/auth/registration-settings').json()['invite_required'])
+        result = self.client.post('/api/auth/register', json={'username': 'open-reader', 'password': 'open-password'})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(self.register(invite['code'], 'another-open-reader').status_code, 200)
+        self.assertEqual(self.client.get('/api/auth/invitations', headers=self.headers()).json()['items'][0]['status'], 'available')
+        self.client.put('/api/auth/registration-settings', headers=self.headers(), json={'invite_required': True})
+        # A page opened before the switch still faces the current backend policy.
+        self.assertEqual(self.register('', 'stale-open-reader').status_code, 400)
+        self.assertEqual(self.register(invite['code'], 'invited-reader').status_code, 200)
+        login = self.client.post('/api/auth/login', json={'username': 'open-reader', 'password': 'open-password'})
+        self.assertEqual(login.status_code, 200)
 
     def test_latest_ten_distinct_visitors(self):
         now = datetime.utcnow()

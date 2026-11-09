@@ -37,15 +37,45 @@ router = APIRouter(prefix="/api/auth", tags=["auth"], route_class=PrivateAuthRou
 _dummy_hash = hash_password("authentication-timing-placeholder")
 
 
+def invitation_required(db):
+    settings = db.get(models.RegistrationSettings, 1)
+    return settings.invite_required if settings is not None else True
+
+
+@router.get("/registration-settings")
+def registration_settings(db: Session = Depends(get_db)):
+    return {"invite_required": invitation_required(db)}
+
+
+@router.put("/registration-settings")
+def update_registration_settings(data: schemas.RegistrationSettingsIn, db: Session = Depends(get_db),
+                                 current: models.User = Depends(require_superadmin)):
+    settings = db.get(models.RegistrationSettings, 1)
+    if settings is None:
+        db.add(models.RegistrationSettings(id=1, invite_required=data.invite_required))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            db.query(models.RegistrationSettings).filter_by(id=1).update({"invite_required": data.invite_required})
+            db.commit()
+    else:
+        settings.invite_required = data.invite_required
+        db.commit()
+    return {"invite_required": data.invite_required}
+
+
 @router.post("/register", response_model=schemas.TokenOut)
 def register(data: schemas.InvitedRegisterIn, request: Request, db: Session = Depends(get_db)):
     consume_security_attempt(("register-ip", get_client_ip(request)), limit=10)
     if len(data.password.encode("utf-8")) > 72:
         raise HTTPException(400, "密码长度请控制在 72 字节内")
-    code = data.invite_code.upper()
-    invite = db.query(models.RegistrationInvite).filter_by(code=code, revoked=False, used_at=None).first()
-    if invite is None:
-        raise HTTPException(400, "邀请码无效、已使用或已作废，请联系管理员")
+    invite = None
+    if invitation_required(db):
+        code = data.invite_code.upper()
+        invite = db.query(models.RegistrationInvite).filter_by(code=code, revoked=False, used_at=None).first()
+        if invite is None:
+            raise HTTPException(400, "邀请码无效、已使用或已作废，请联系管理员")
     if db.query(models.User).filter(models.User.username == data.username).first():
         raise HTTPException(status_code=400, detail="用户名已存在")
     user = models.User(
@@ -57,12 +87,13 @@ def register(data: schemas.InvitedRegisterIn, request: Request, db: Session = De
     try:
         db.flush()
         # Claim in the same transaction as account creation, across workers.
-        claimed = db.query(models.RegistrationInvite).filter_by(
-            id=invite.id, revoked=False, used_at=None,
-        ).update({"used_at": datetime.utcnow(), "used_by": user.username}, synchronize_session=False)
-        if claimed != 1:
-            db.rollback()
-            raise HTTPException(400, "邀请码无效、已使用或已作废，请联系管理员")
+        if invite is not None:
+            claimed = db.query(models.RegistrationInvite).filter_by(
+                id=invite.id, revoked=False, used_at=None,
+            ).update({"used_at": datetime.utcnow(), "used_by": user.username}, synchronize_session=False)
+            if claimed != 1:
+                db.rollback()
+                raise HTTPException(400, "邀请码无效、已使用或已作废，请联系管理员")
         db.commit()
     except IntegrityError:
         db.rollback()
