@@ -21,6 +21,10 @@ class RegisterIn(BaseModel):
         return value.strip()
 
 
+class InvitedRegisterIn(RegisterIn):
+    invite_code: str = Field(pattern=r"^[A-Za-z0-9]{6}$")
+
+
 class LoginIn(BaseModel):
     username: str = Field(min_length=1, max_length=50)
     password: SecretStr = Field(max_length=100)

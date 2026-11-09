@@ -8,6 +8,7 @@ export default function Register() {
   const [username, setUsername] = useState('')
   const [nickname, setNickname] = useState('')
   const [password, setPassword] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -16,7 +17,7 @@ export default function Register() {
     setBusy(true)
     setErr('')
     try {
-      await register(username.trim(), password, nickname.trim())
+      await register(username.trim(), password, nickname.trim(), inviteCode.trim().toUpperCase())
       nav('/')
     } catch (e) {
       setErr(e.message)
@@ -29,7 +30,7 @@ export default function Register() {
     <div className="auth-page">
       <form className="panel auth-card" onSubmit={onSubmit}>
         <h2>注册 CodeBlog</h2>
-        <p className="muted">加入社区，分享你的技术见解</p>
+        <p className="muted">注册需使用管理员提供的6位邀请码，每个邀请码仅可使用一次。已有账号可直接登录。</p>
         {err && <div className="alert">{err}</div>}
         <label>
           用户名
@@ -54,6 +55,12 @@ export default function Register() {
             minLength={6}
             required
           />
+        </label>
+        <label>
+          邀请码
+          <input value={inviteCode} onChange={e => setInviteCode(e.target.value.toUpperCase())}
+            minLength={6} maxLength={6} pattern="[A-Za-z0-9]{6}" autoComplete="off"
+            placeholder="输入管理员提供的6位邀请码" required />
         </label>
         <button className="btn primary block" disabled={busy}>
           {busy ? '注册中...' : '注册'}

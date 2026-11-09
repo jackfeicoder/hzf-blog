@@ -1,14 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+import secrets
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from datetime import datetime
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 import models
 import schemas
-from auth import create_access_token, get_current_user, hash_password, verify_password, consume_security_attempt, clear_security_attempt
+from auth import create_access_token, get_current_user, hash_password, verify_password, consume_security_attempt, clear_security_attempt, require_superadmin
 from database import get_db
+from routers.visitors import get_client_ip
 
 class PrivateAuthRoute(APIRoute):
     def get_route_handler(self):
@@ -34,9 +38,14 @@ _dummy_hash = hash_password("authentication-timing-placeholder")
 
 
 @router.post("/register", response_model=schemas.TokenOut)
-def register(data: schemas.RegisterIn, db: Session = Depends(get_db)):
+def register(data: schemas.InvitedRegisterIn, request: Request, db: Session = Depends(get_db)):
+    consume_security_attempt(("register-ip", get_client_ip(request)), limit=10)
     if len(data.password.encode("utf-8")) > 72:
         raise HTTPException(400, "密码长度请控制在 72 字节内")
+    code = data.invite_code.upper()
+    invite = db.query(models.RegistrationInvite).filter_by(code=code, revoked=False, used_at=None).first()
+    if invite is None:
+        raise HTTPException(400, "邀请码无效、已使用或已作废，请联系管理员")
     if db.query(models.User).filter(models.User.username == data.username).first():
         raise HTTPException(status_code=400, detail="用户名已存在")
     user = models.User(
@@ -45,8 +54,61 @@ def register(data: schemas.RegisterIn, db: Session = Depends(get_db)):
         nickname=data.nickname or data.username,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.flush()
+        # Claim in the same transaction as account creation, across workers.
+        claimed = db.query(models.RegistrationInvite).filter_by(
+            id=invite.id, revoked=False, used_at=None,
+        ).update({"used_at": datetime.utcnow(), "used_by": user.username}, synchronize_session=False)
+        if claimed != 1:
+            db.rollback()
+            raise HTTPException(400, "邀请码无效、已使用或已作废，请联系管理员")
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "用户名已存在或邀请码已使用，请重试")
     return schemas.TokenOut(access_token=create_access_token(user.username, user))
+
+
+def invitation_out(invite):
+    return {"id": invite.id, "code": invite.code, "created_at": invite.created_at,
+            "used_at": invite.used_at, "used_by": invite.used_by,
+            "status": "used" if invite.used_at else "revoked" if invite.revoked else "available"}
+
+
+@router.get("/invitations")
+def invitations(page: int = Query(1, ge=1), db: Session = Depends(get_db),
+                current: models.User = Depends(require_superadmin)):
+    query = db.query(models.RegistrationInvite)
+    return {"items": [invitation_out(row) for row in query.order_by(models.RegistrationInvite.id.desc()).offset((page - 1) * 20).limit(20)],
+            "total": query.count()}
+
+
+@router.post("/invitations", status_code=201)
+def create_invitation(db: Session = Depends(get_db), current: models.User = Depends(require_superadmin)):
+    consume_security_attempt(("invite-create", current.id), limit=20)
+    for _ in range(10):
+        code = "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(6))
+        invite = models.RegistrationInvite(code=code, created_by=current.id)
+        db.add(invite)
+        try:
+            db.commit()
+            return invitation_out(invite)
+        except IntegrityError:
+            db.rollback()
+    raise HTTPException(503, "邀请码生成繁忙，请重试")
+
+
+@router.delete("/invitations/{invite_id}", status_code=204)
+def revoke_invitation(invite_id: int, db: Session = Depends(get_db),
+                      current: models.User = Depends(require_superadmin)):
+    changed = db.query(models.RegistrationInvite).filter_by(id=invite_id, used_at=None, revoked=False).update(
+        {"revoked": True}, synchronize_session=False)
+    if changed != 1:
+        db.rollback()
+        raise HTTPException(409, "邀请码不存在、已使用或已作废")
+    db.commit()
+    return Response(status_code=204, headers={"Cache-Control": "private, no-store"})
 
 
 @router.post("/login", response_model=schemas.TokenOut)

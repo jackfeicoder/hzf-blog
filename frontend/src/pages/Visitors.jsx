@@ -32,7 +32,7 @@ export default function Visitors() {
       <div className="visitors-header-banner card">
         <div className="banner-left">
           <h2>👀 实时访客记录与足迹看板</h2>
-          <p className="muted">记录全站真实访问轨迹，已登录用户显示个人主页，未登录显示游客 IP</p>
+          <p className="muted">最近10位不同访客：登录用户按账号去重，游客按IP去重，每位只显示最近一条记录。</p>
         </div>
         <button
           type="button"
@@ -50,7 +50,7 @@ export default function Visitors() {
           <div className="stat-icon">📊</div>
           <div className="stat-info">
             <span className="stat-num">{formatNum(data?.total_visits || 0)}</span>
-            <span className="stat-label">全站累计访问次</span>
+            <span className="stat-label">保留期内访问记录</span>
           </div>
         </div>
 
@@ -74,7 +74,7 @@ export default function Visitors() {
       {/* 实时访客数据流 */}
       <div className="card visitors-list-card">
         <div className="list-title-bar">
-          <h3>⚡ 最新 100 访客日志记录</h3>
+          <h3>⚡ 最近10位不同访客</h3>
           <span className="live-badge">● 实时更新中</span>
         </div>
 

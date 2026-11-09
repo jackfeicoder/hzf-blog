@@ -40,6 +40,18 @@ class User(Base):
     appearance = relationship("UserAppearance", uselist=False, cascade="all, delete-orphan")
 
 
+class RegistrationInvite(Base):
+    """Single-use registration credentials, visible only to the site owner."""
+    __tablename__ = "registration_invites"
+    id = Column(Integer, primary_key=True)
+    code = Column(String(6), nullable=False, unique=True, index=True)
+    created_by = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    used_at = Column(DateTime, nullable=True)
+    used_by = Column(String(50), nullable=True)
+    revoked = Column(Boolean, nullable=False, default=False)
+
+
 class UserAppearance(Base):
     __tablename__ = "user_appearance"
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)

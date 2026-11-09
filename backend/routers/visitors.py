@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -149,10 +149,21 @@ def get_visitors(
         or 0
     )
 
+    # One latest recorded visit per account, or per IP for anonymous visitors.
+    ranked = db.query(
+        models.VisitLog.id.label("visit_id"),
+        func.row_number().over(
+            partition_by=(models.VisitLog.user_id,
+                          case((models.VisitLog.user_id.is_(None), models.VisitLog.ip), else_="")),
+            order_by=(models.VisitLog.created_at.desc(), models.VisitLog.id.desc()),
+        ).label("position"),
+    ).subquery()
     logs = (
         db.query(models.VisitLog)
-        .order_by(models.VisitLog.created_at.desc())
-        .limit(100)
+        .join(ranked, ranked.c.visit_id == models.VisitLog.id)
+        .filter(ranked.c.position == 1)
+        .order_by(models.VisitLog.created_at.desc(), models.VisitLog.id.desc())
+        .limit(10)
         .all()
     )
 

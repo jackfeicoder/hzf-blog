@@ -119,8 +119,11 @@ async function request(path, { method = 'GET', body, auth = false, timeoutMs = m
 
 export const api = {
   // 认证
-  register: (username, password, nickname) =>
-    request('/api/auth/register', { method: 'POST', body: { username, password, nickname } }),
+  register: (username, password, nickname, invite_code) =>
+    request('/api/auth/register', { method: 'POST', body: { username, password, nickname, invite_code } }),
+  invitations: (page = 1) => request(`/api/auth/invitations?page=${page}`),
+  createInvitation: () => request('/api/auth/invitations', { method: 'POST' }),
+  revokeInvitation: id => request(`/api/auth/invitations/${id}`, { method: 'DELETE' }),
   login: (username, password) =>
     request('/api/auth/login', { method: 'POST', body: { username, password } }),
   me: () => request('/api/auth/me', { auth: true }),

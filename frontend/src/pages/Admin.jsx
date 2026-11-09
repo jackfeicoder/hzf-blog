@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
 import PasswordConfirm from '../components/PasswordConfirm'
+import InviteManager from '../components/InviteManager'
 import './admin.css'
 
-const tabs = [['posts', '文章'], ['users', '用户'], ['categories', '分类'], ['comments', '评论'], ['study', '用户打卡']]
+const tabs = [['posts', '文章'], ['users', '用户'], ['categories', '分类'], ['comments', '评论'], ['study', '用户打卡'], ['invitations', '邀请码']]
 const labels = { java: 'Java八股', hot100: 'Hot100', project: '项目学习' }
 const monthNow = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 7)
 
@@ -33,7 +34,7 @@ export default function Admin() {
   const studyVersion = useRef(0)
 
   const load = useCallback(async () => {
-    if (!allowed || tab === 'study') return
+    if (!allowed || ['study', 'invitations'].includes(tab)) return
     const current = ++version.current
     setLoading(true); setError('')
     try {
@@ -99,7 +100,8 @@ export default function Admin() {
     <nav className="panel admin-tabs" aria-label="后台分类">{tabs.map(([key, label]) => <button className={`btn ${key === tab ? 'primary' : 'ghost'}`} key={key} onClick={() => changeTab(key)} disabled={busy}>{label}</button>)}</nav>
     {error && <div className="panel admin-error" role="alert">{error}<button className="btn ghost sm" disabled={loading || busy} onClick={() => tab === 'study' ? studyLoad() : load()}>重试</button></div>}
     {message && <p className="admin-message" role="status">{message}</p>}
-    {tab !== 'study' && <>
+    {tab === 'invitations' && <InviteManager />}
+    {!['study', 'invitations'].includes(tab) && <>
       <form className="admin-toolbar" onSubmit={e => { e.preventDefault(); if (busy) return; setPage(1); setQuery(search) }}>
         {tab !== 'categories' && <><input aria-label="搜索后台数据" value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索标题、用户名或内容…" /><button className="btn ghost" disabled={loading}>搜索</button></>}
         <button type="button" className="btn ghost" disabled={loading || busy} onClick={load}>刷新</button>

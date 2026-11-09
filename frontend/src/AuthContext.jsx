@@ -31,8 +31,8 @@ export function AuthProvider({ children }) {
     return me
   }
 
-  const register = async (username, password, nickname) => {
-    const { access_token } = await api.register(username, password, nickname)
+  const register = async (username, password, nickname, inviteCode) => {
+    const { access_token } = await api.register(username, password, nickname, inviteCode)
     setToken(access_token)
     const me = await api.me()
     setUser(me)
