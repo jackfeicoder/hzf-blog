@@ -28,6 +28,21 @@ test('AI streaming carries the blog session separately from a provider key', asy
   assert.equal(calls[0].options.signal,controller.signal)
 })
 
+test('registration sends invitation and management uses authenticated uncached endpoints', async () => {
+  await api.register('new-reader', 'password-fixture', 'Reader', 'ABCD23')
+  assert.equal(JSON.parse(calls[0].options.body).invite_code, 'ABCD23')
+  setToken('admin-session-fixture')
+  await api.invitations(2)
+  await api.invitations(2)
+  await api.createInvitation()
+  await api.revokeInvitation(9)
+  assert.equal(calls[1].path, '/api/auth/invitations?page=2')
+  assert.equal(calls[2].path, calls[1].path)
+  assert.equal(calls[3].options.method, 'POST')
+  assert.equal(calls[4].options.method, 'DELETE')
+  assert.equal(calls[4].options.headers.Authorization, 'Bearer admin-session-fixture')
+})
+
 test('home requests share cached responses with sidebars', async () => {
   await Promise.all([api.listPosts(), api.listPosts()])
   await api.listPosts()

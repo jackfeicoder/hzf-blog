@@ -74,7 +74,9 @@ class AccountSecurityTests(unittest.TestCase):
         self.assertEqual(allowed.headers['cache-control'], 'private, no-store')
         self.assertEqual(allowed.headers['vary'], 'Authorization')
         self.assertGreaterEqual(allowed.json()['total_visits'], before)
-        self.assertTrue(any(item['path'] == '/u/administrator' for item in allowed.json()['items']))
+        # The administrator's newest visit replaces their older profile visit.
+        self.assertTrue(any(item['user'] and item['user']['username'] == 'administrator' for item in allowed.json()['items']))
+        self.assertTrue(all('jackfei' not in item['path'] for item in allowed.json()['items']))
         self.assertNotIn('jackfei', allowed.text)
 
     def test_public_visits_still_record_without_access_to_dashboard(self):
