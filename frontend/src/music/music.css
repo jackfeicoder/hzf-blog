@@ -55,3 +55,8 @@
   .music-expanded .music-lyrics-panel{margin-top:4px}
   .music-detail-controls .music-full-extras{margin-top:6px}
 }
+
+/* Above page content/bottom navigation, below drawer backdrop (60)/drawer (70).
+   Queue uses the same range; settings remain inside the player's stacking context. */
+.music-player-bar { z-index:55; }
+.music-queue-popover { z-index:56; }
