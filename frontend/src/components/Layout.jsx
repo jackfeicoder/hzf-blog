@@ -6,6 +6,7 @@ import { useAppearance } from '../appearance/AppearanceContext'
 import AppearanceSettings from '../appearance/AppearanceSettings'
 import { visibleNavigation } from '../navigation'
 import NavigationLink from './NavigationLink.js'
+import { filingForHost } from '../siteInfo.js'
 
 export function avatarText(name = '') {
   return (name || '?').slice(0, 1).toUpperCase()
@@ -54,6 +55,7 @@ export default function Layout({ children }) {
   const { user, logout } = useAuth()
   const nav = useNavigate()
   const location = useLocation()
+  const filing = filingForHost(window.location.hostname)
   const [menuOpen, setMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const { reduced, canEdit } = useAppearance()
@@ -342,8 +344,9 @@ export default function Layout({ children }) {
         ↑
       </button>
 
-      <footer className="footer desktop-only">
+      <footer className={`footer ${filing ? 'site-filing-footer' : 'desktop-only'}`}>
         <div className="container">CodeBlog · 技术社区 · React + FastAPI · <Link to="/about">关于本站</Link></div>
+        {filing && <div className="container"><a href={filing.url} target="_blank" rel="noopener noreferrer">{filing.number}</a></div>}
       </footer>
       {appearanceOpen && canEdit && <AppearanceSettings onClose={() => setAppearanceOpen(false)} />}
     </div>

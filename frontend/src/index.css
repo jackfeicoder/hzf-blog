@@ -1467,6 +1467,10 @@ html.dark .alert {
 }
 
 /* ---- responsive ---- */
+@media (max-width: 768px) {
+  .site-filing-footer { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
+}
+
 @media (min-width: 769px) and (max-width: 1199px) {
   .nav-links.desktop-only { display: none !important; }
 }
