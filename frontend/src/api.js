@@ -189,6 +189,7 @@ export const api = {
 
   // 访客统计
   getVisitors: () => request('/api/visitors'),
+  trackVisit: path => request('/api/visitors/track', { method: 'POST', body: { path }, timeoutMs: 3000 }),
 
   videoLinks: () => { syncCacheSession(); return videoCache.read('videos', () => request('/api/media/videos')) },
   peekVideoLinks: () => { syncCacheSession(); return videoCache.peek('videos') },

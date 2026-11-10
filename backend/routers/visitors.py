@@ -1,13 +1,13 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel
-from sqlalchemy import case, func
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from auth import require_superadmin
+from auth import consume_security_attempt, get_current_user_optional, require_superadmin
 from database import get_db
 import models
 import schemas
@@ -61,7 +61,7 @@ def visit_day_start(now=None):
 
 
 def record_visit(request: Request, db: Session, user: Optional[models.User] = None, path: str = None):
-    """同 IP 每个北京时间自然日仅记录一次，保留七天滚动清理。"""
+    """同IP每天一条，重复访问更新最近信息，保留七天滚动清理。"""
     try:
         now = datetime.utcnow()
         day_start = visit_day_start(now)
@@ -73,28 +73,31 @@ def record_visit(request: Request, db: Session, user: Optional[models.User] = No
         if db.get_bind().dialect.name == 'sqlite':
             # Starts a real write transaction even in SQLite legacy mode;
             # claim and log commit together, without rolling back pending views.
-            claimed = db.execute(sqlite_insert(models.VisitDay).values(ip=ip, day_start=day_start)
-                                 .on_conflict_do_nothing(index_elements=['ip', 'day_start']))
-            if claimed.rowcount == 0:
-                return
+            db.execute(sqlite_insert(models.VisitDay).values(ip=ip, day_start=day_start)
+                       .on_conflict_do_nothing(index_elements=['ip', 'day_start']))
         else:
             try:
                 with db.begin_nested():
                     db.add(models.VisitDay(ip=ip, day_start=day_start))
                     db.flush()
             except IntegrityError:
-                return
+                pass
         # Honor records written earlier today, before this rule was deployed.
         recent_exists = (
-            db.query(models.VisitLog.id)
+            db.query(models.VisitLog)
             .filter(
                 models.VisitLog.ip == ip,
                 models.VisitLog.created_at >= day_start,
                 models.VisitLog.created_at < day_start + timedelta(days=1),
             )
-            .first()
+            .order_by(models.VisitLog.created_at.desc(), models.VisitLog.id.desc()).first()
         )
         if recent_exists:
+            if recent_exists.created_at <= now:
+                recent_exists.user_id = user.id if user else None
+                recent_exists.path = target_path[:200]
+                recent_exists.user_agent = user_agent
+                recent_exists.created_at = now
             db.commit()
             return
 
@@ -119,6 +122,26 @@ def record_visit(request: Request, db: Session, user: Optional[models.User] = No
     except Exception:
         db.rollback()
 
+
+
+class VisitTrackIn(BaseModel):
+    path: str = Field(min_length=1, max_length=200)
+    model_config = {"extra": "forbid"}
+
+    @field_validator('path')
+    @classmethod
+    def page_path(cls, value):
+        if not value.startswith('/') or value.startswith('//') or value == '/api' or value.startswith('/api/') or any(ord(c) <= 32 or c in '?#\\' for c in value):
+            raise ValueError('请提供不含查询参数的站内页面路径')
+        return value
+
+
+@router.post('/track', status_code=204)
+def track_visit(data: VisitTrackIn, request: Request, db: Session = Depends(get_db),
+                user: Optional[models.User] = Depends(get_current_user_optional)):
+    consume_security_attempt(('visitor-track', get_client_ip(request)), limit=120)
+    record_visit(request, db, user, path=data.path)
+    return Response(status_code=204, headers={'Cache-Control': 'private, no-store'})
 
 
 @router.get("", response_model=VisitorsSummaryOut)
@@ -149,12 +172,11 @@ def get_visitors(
         or 0
     )
 
-    # One latest recorded visit per account, or per IP for anonymous visitors.
+    # One latest recorded visit per IP, including accounts using several IPs.
     ranked = db.query(
         models.VisitLog.id.label("visit_id"),
         func.row_number().over(
-            partition_by=(models.VisitLog.user_id,
-                          case((models.VisitLog.user_id.is_(None), models.VisitLog.ip), else_="")),
+            partition_by=models.VisitLog.ip,
             order_by=(models.VisitLog.created_at.desc(), models.VisitLog.id.desc()),
         ).label("position"),
     ).subquery()

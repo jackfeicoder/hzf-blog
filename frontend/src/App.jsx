@@ -9,6 +9,7 @@ import AppearanceHost from './appearance/AppearanceHost'
 import WelcomeGate from './welcome/WelcomeGate'
 import AdminOnly from './components/AdminOnly'
 import GuestAccess from './components/GuestAccess'
+import VisitTracker from './components/VisitTracker'
 
 const PostPage = lazy(() => import('./pages/PostPage'))
 const Editor = lazy(() => import('./pages/Editor'))
@@ -30,6 +31,7 @@ export default function App() {
     <AuthProvider>
       <AppearanceProvider>
       <BrowserRouter>
+        <VisitTracker />
         <AppearanceHost />
         <MusicHost />
         <Layout>

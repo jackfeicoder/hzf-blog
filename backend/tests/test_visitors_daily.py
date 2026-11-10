@@ -73,7 +73,7 @@ class VisitorDailyTests(unittest.TestCase):
             self.record()
             self.record(path='/another')
         with self.sessions() as db:
-            self.assertEqual(db.query(models.VisitLog).one().path, '/old')
+            self.assertEqual(db.query(models.VisitLog).one().path, '/another')
 
     def test_duplicate_visit_does_not_rollback_article_view_changes(self):
         with patch.object(visitors, 'datetime') as clock:
@@ -92,6 +92,34 @@ class VisitorDailyTests(unittest.TestCase):
             with self.sessions() as db:
                 self.assertEqual(db.query(models.Post).one().views, 5)
                 self.assertEqual(db.query(models.VisitLog).count(), 1)
+
+    def test_same_user_two_ips_five_page_visits_keep_two_latest_rows(self):
+        with self.sessions() as db:
+            reader = models.User(username='reader', password_hash='unused')
+            db.add(reader); db.commit(); db.refresh(reader); db.expunge(reader)
+        with patch.object(visitors, 'datetime') as clock:
+            for n, ip in enumerate(['192.0.2.1', '192.0.2.1', '192.0.2.2', '192.0.2.2', '192.0.2.2']):
+                clock.utcnow.return_value = self.now + timedelta(seconds=n)
+                self.record(ip=ip, user=reader, path=f'/page/{n}')
+        with self.sessions() as db:
+            rows = db.query(models.VisitLog).order_by(models.VisitLog.ip).all()
+            self.assertEqual(len(rows), 2)
+            self.assertEqual([r.path for r in rows], ['/page/1', '/page/4'])
+            self.assertEqual([r.user_id for r in rows], [reader.id, reader.id])
+
+    def test_guest_becomes_logged_in_on_same_ip_without_an_extra_row(self):
+        with self.sessions() as db:
+            reader = models.User(username='reader', password_hash='unused')
+            db.add(reader); db.commit(); db.refresh(reader); db.expunge(reader)
+        with patch.object(visitors, 'datetime') as clock:
+            clock.utcnow.return_value = self.now
+            self.record(path='/welcome')
+            clock.utcnow.return_value = self.now + timedelta(seconds=1)
+            self.record(user=reader, path='/music')
+        with self.sessions() as db:
+            row = db.query(models.VisitLog).one()
+            self.assertEqual(row.user_id, reader.id)
+            self.assertEqual(row.path, '/music')
 
     def test_seven_day_cleanup_retained(self):
         with self.sessions() as db:

@@ -11,7 +11,7 @@ PUBLIC_GET = frozenset({
     '/api/rankings/posts', '/api/rankings/authors',
     '/api/auth/registration-settings', '/api/auth/welcome-author',
 })
-PUBLIC_POST = frozenset({'/api/auth/login', '/api/auth/register'})
+PUBLIC_POST = frozenset({'/api/auth/login', '/api/auth/register', '/api/visitors/track'})
 
 
 def require_site_access(request: Request,

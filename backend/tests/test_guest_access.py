@@ -69,3 +69,15 @@ class GuestAccessTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/auth/register', json={'username': 'fresh-reader', 'password': 'password'}).status_code, 400)
         with patch.object(music.FILE_CACHE, 'by_ticket', return_value=None):
             self.assertEqual(self.client.get('/api/music/stream/invalid-capability').status_code, 410)
+
+    def test_route_tracking_is_public_but_reading_logs_stays_admin_only(self):
+        ip_headers = {'X-Forwarded-For': '192.0.2.80'}
+        self.assertEqual(self.client.post('/api/visitors/track', json={'path': '/'}, headers=ip_headers).status_code, 204)
+        self.assertEqual(self.client.post('/api/visitors/track', json={'path': '/music'}, headers={**ip_headers, **self.headers('reader')}).status_code, 204)
+        with self.sessions() as db:
+            row = db.query(models.VisitLog).filter_by(ip='192.0.2.80').one()
+            self.assertEqual(row.path, '/music')
+            self.assertEqual(row.user_id, self.ids['reader'])
+        self.assertEqual(self.client.get('/api/visitors').status_code, 401)
+        for path in ('https://example.com', '//example.com', '/api/auth/login', '/music?token=private', '/music#private'):
+            self.assertEqual(self.client.post('/api/visitors/track', json={'path': path}).status_code, 422)

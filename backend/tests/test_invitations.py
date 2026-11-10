@@ -181,10 +181,10 @@ class InvitationTests(unittest.TestCase):
     def test_latest_ten_distinct_visitors(self):
         now = datetime.utcnow()
         with self.sessions() as db:
-            # One logged-in account on many addresses occupies one row.
+            # One logged-in account on many addresses occupies several IP rows.
             for n in range(15):
                 db.add(models.VisitLog(user_id=self.ids['reader'], ip=f'192.0.2.{n}', path=f'/reader/{n}', created_at=now + timedelta(seconds=n)))
-            # Different accounts on the same IP remain distinct.
+            # A different account on the same IP replaces that IP's older row.
             db.add(models.VisitLog(user_id=self.ids['legacy-admin'], ip='192.0.2.14', path='/other', created_at=now + timedelta(seconds=16)))
             for n in range(12):
                 for repeat in range(2):
@@ -196,9 +196,10 @@ class InvitationTests(unittest.TestCase):
         rows = result.json()['items']
         self.assertEqual(len(rows), 10)
         self.assertEqual(rows[0]['path'], '/other')
-        self.assertEqual(rows[1]['path'], '/reader/14')
-        identities = [('user', r['user']['id']) if r['user'] else ('ip', r['ip']) for r in rows]
-        self.assertEqual(len(set(identities)), 10)
+        self.assertEqual(rows[1]['path'], '/reader/13')
+        self.assertNotIn('/reader/14', [r['path'] for r in rows])
+        self.assertEqual(len({r['ip'] for r in rows}), 10)
+        self.assertGreater(sum(bool(r['user']) and r['user']['id'] == self.ids['reader'] for r in rows), 1)
         self.assertTrue(all(r['path'].endswith('/0') for r in rows if r['is_guest']))
         self.assertIn('no-store', result.headers['cache-control'])
         self.assertEqual(self.client.get('/api/visitors', headers=self.headers('reader')).status_code, 403)

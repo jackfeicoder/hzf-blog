@@ -55,6 +55,16 @@ test('registration settings read fresh and administrator updates carry boolean a
   assert.deepEqual(JSON.parse(calls[2].options.body), { invite_required: false })
 })
 
+test('page tracking sends pathname only and does not invalidate homepage cache', async () => {
+  await api.listPosts()
+  await api.trackVisit('/music')
+  assert.equal(calls[1].path, '/api/visitors/track')
+  assert.equal(calls[1].options.method, 'POST')
+  assert.deepEqual(JSON.parse(calls[1].options.body), { path: '/music' })
+  await api.listPosts()
+  assert.equal(calls.length, 2)
+})
+
 test('home requests share cached responses with sidebars', async () => {
   await Promise.all([api.listPosts(), api.listPosts()])
   await api.listPosts()
