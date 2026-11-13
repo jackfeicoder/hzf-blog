@@ -1,4 +1,4 @@
-"""No live billing calls: disposable snapshots and mocked read-only API pages."""
+"""No live traffic calls: disposable snapshots and mocked CDT responses."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -26,8 +26,8 @@ import models
 from routers import visitors
 
 
-def bill(usage='0.24287', region='华北2（北京）', **extra):
-    return {'BillingItemCode': 'internet_traffic', 'Region': region, 'Usage': usage, 'UsageUnit': 'GB', **extra}
+def traffic(value=261236190, region='cn-beijing', **extra):
+    return {'Traffic': value, 'BusinessRegionId': region, 'ISPType': 'bgp', **extra}
 
 
 class CdtUsageTests(unittest.TestCase):
@@ -91,35 +91,45 @@ class CdtUsageTests(unittest.TestCase):
             cdt.save_snapshot({'used_gb': value, 'updated_at': self.now.isoformat(), 'billing_cycle': '2026-11'}, self.path)
             self.assertIsNone(cdt.cached_usage(self.path, self.now)['used_gb'])
 
-    def test_mainland_all_instances_free_and_paid_rows_are_summed(self):
-        rows = [bill('1'), bill('2', 'cn-shanghai'), bill('.5', '杭州'),
-                bill('99', 'cn-hongkong'), bill('8', 'ap-southeast-1'),
-                bill('7', BillingItemCode='inter_region_traffic'), bill('6', InstanceConfig='精品BGP')]
-        self.assertEqual(cdt.sum_usage(rows), Decimal('3.5'))
-        self.assertEqual(cdt.sum_usage([bill('21')]), Decimal('21'))
-        self.assertEqual(cdt.sum_usage([bill('0')]), Decimal('0'))
-        for row in (bill(region='unknown'), bill(UsageUnit='MB'), bill(usage='NaN'), bill(BillingItemCode='unknown')):
+    def test_mainland_bgp_totals_include_free_traffic_without_double_counting(self):
+        gb = 1024 ** 3
+        rows = [traffic(gb, ProductTrafficDetails=[{'Traffic':gb}], TrafficTierDetails=[{'Traffic':gb}]),
+                traffic(2*gb, 'cn-shanghai'), traffic(99*gb, 'cn-hongkong'),
+                traffic(8*gb, 'ap-southeast-1'), traffic(7*gb, ISPType='bgp_pro')]
+        self.assertEqual(cdt.sum_usage(rows), Decimal('3'))
+        self.assertEqual(cdt.sum_usage([traffic(261236190)]), Decimal(261236190)/Decimal(gb))
+        self.assertEqual(cdt.sum_usage([traffic(21*gb)]), Decimal('21'))
+        self.assertEqual(cdt.sum_usage([traffic(0)]), Decimal('0'))
+        for row in (traffic(region='unknown'), traffic(value=None), traffic(value='NaN'), traffic(value=-1), traffic(value='.5')):
             with self.assertRaises(cdt.BillingError):
                 cdt.sum_usage([row])
         with self.assertRaises(cdt.BillingError):
+            cdt.sum_usage([traffic(), traffic()])
+        with self.assertRaises(cdt.BillingError):
             cdt.sum_usage([])
 
-    def test_pagination_keeps_zero_charge_rows_and_uses_cdt_filter(self):
-        loader = Mock(side_effect=[{'Items': [bill('1')], 'NextToken': 'page2'}, {'Items': [bill('2')]}])
-        self.assertEqual(cdt.fetch_month(self.now, {}, loader), Decimal('3'))
-        first, second = [call.args[0] for call in loader.call_args_list]
-        self.assertEqual(first['ProductCode'], 'cdt')
-        self.assertEqual(first['IsBillingItem'], 'true')
-        self.assertEqual(first['IsHideZeroCharge'], 'false')
-        self.assertEqual(second['NextToken'], 'page2')
-        with self.assertRaises(cdt.BillingError):
-            cdt.fetch_month(self.now, {}, lambda *args: {'Items': [], 'NextToken': 'loop'})
+    def test_traffic_endpoint_uses_current_month_totals_not_bill_items(self):
+        loader = Mock(return_value={'TrafficDetails': [traffic(1024**3)]})
+        self.assertEqual(cdt.fetch_month(self.now, {}, loader), Decimal('1'))
+        self.assertEqual(loader.call_args.args[0], {})
+        for response in ({'Items': [{'Usage': '0'}]}, {'TrafficDetails': None},
+                         {'TrafficDetails': [None]}, {'TrafficDetails': [], 'NextToken': 'unexpected'}):
+            with self.assertRaises(cdt.BillingError):
+                cdt.fetch_month(self.now, {}, lambda *args: response)
+
+    def test_legacy_billing_snapshot_is_hidden_and_does_not_skip_traffic_sync(self):
+        cdt.save_snapshot({'used_gb':'0', 'updated_at':self.now.isoformat(),
+                          'last_attempt_at': self.now.isoformat(), 'billing_cycle':'2026-11'}, self.path)
+        self.assertIsNone(cdt.cached_usage(self.path, self.now)['used_gb'])
+        self.assertEqual(self.success(), 'ok')
+        self.assertEqual(cdt.read_snapshot(self.path)['data_source'], cdt.SOURCE)
 
     def test_signing_uses_read_only_action_and_never_transmits_secret(self):
         credential = {'AccessKeyId': 'fixture-id', 'AccessKeySecret': 'fixture-secret-do-not-send', 'SecurityToken': 'fixture-token'}
         body = cdt.signed_body({'Action': 'PurchaseSomething', 'ProductCode': 'cdt'}, credential, self.now)
         parsed = parse_qs(body.decode())
-        self.assertEqual(parsed['Action'], ['DescribeInstanceBill'])
+        self.assertEqual(parsed['Action'], ['ListCdtInternetTraffic'])
+        self.assertEqual(parsed['Version'], ['2021-08-13'])
         self.assertEqual(parsed['SecurityToken'], ['fixture-token'])
         self.assertIn('Signature', parsed)
         self.assertNotIn(credential['AccessKeySecret'].encode(), body)

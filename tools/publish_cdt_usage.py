@@ -1,4 +1,4 @@
-"""Backed-up billing-card release and daily read-only timer installation."""
+"""Backed-up CDT traffic-counter correction and daily read-only sync."""
 from datetime import datetime, timezone
 from pathlib import Path
 import argparse
@@ -14,15 +14,15 @@ from deploy_study import release
 FILES = ['backend/cdt_usage.py', 'backend/routers/visitors.py', 'frontend/src/api.js',
          'frontend/src/pages/Visitors.jsx', 'frontend/src/components/VisitorTraffic.jsx',
          'frontend/src/components/visitor-traffic.css']
-NEW = ('backend/cdt_usage.py', 'frontend/src/components/VisitorTraffic.jsx', 'frontend/src/components/visitor-traffic.css')
+NEW = ()
 UNITS = ('hzf-cdt-usage.service', 'hzf-cdt-usage.timer')
 
 
 def pack():
     local = Path(__file__).resolve().parents[1]
-    names = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', 'a2b4e92', 'frontend/src'], cwd=local, text=True).splitlines()
-    names += ['backend/routers/visitors.py']
-    baseline = {name: normalized_hash(subprocess.check_output(['git', 'show', 'a2b4e92:' + name], cwd=local)) for name in names}
+    names = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', 'd49c5f3', 'frontend/src'], cwd=local, text=True).splitlines()
+    names += ['backend/routers/visitors.py', 'backend/cdt_usage.py']
+    baseline = {name: normalized_hash(subprocess.check_output(['git', 'show', 'd49c5f3:' + name], cwd=local)) for name in names}
     baseline.update({name: None for name in NEW})
     paths = [local / name for name in FILES] + list((local / 'frontend/dist').rglob('*'))
     paths += list((local / 'backend/tests').glob('test_*.py')) + [local / 'backend/music_runtime.cjs']
@@ -41,19 +41,21 @@ def publish(stage):
         if (digest is None and path.exists()) or (digest is not None and normalized_hash(path.read_bytes()) != digest):
             raise RuntimeError('Production changed: ' + name)
     for unit in UNITS:
-        if (Path('/etc/systemd/system') / unit).exists():
-            raise RuntimeError('Inspect existing timer before modifying: ' + unit)
+        target = Path('/etc/systemd/system') / unit
+        if not target.is_file():
+            raise RuntimeError('Missing existing daily sync: ' + unit)
     subprocess.run(['systemd-analyze', 'calendar', '*-*-* 13:30:00 Asia/Shanghai'], check=True)
     before = state_fingerprint()
     backup = release(stage, files=FILES, required_paths=('/api/visitors/traffic', '/api/visitors'))
     assert before == state_fingerprint(), 'Inspect concurrent runtime changes'
     for unit in UNITS:
         target = Path('/etc/systemd/system') / unit
+        shutil.copy2(target, backup / unit)
         shutil.copy2(stage / 'tools' / unit, target)
         os.chmod(target, 0o644)
     subprocess.run(['systemctl', 'daemon-reload'], check=True)
     subprocess.run(['systemctl', 'enable', '--now', 'hzf-cdt-usage.timer'], check=True)
-    subprocess.run(['systemctl', 'start', 'hzf-cdt-usage.service'], check=True)
+    subprocess.run([str(ROOT / 'backend/venv/bin/python'), str(ROOT / 'backend/cdt_usage.py'), '--force'], check=True)
     print('CDT_USAGE_RELEASE_OK; BACKUP=' + str(backup), flush=True)
 
 

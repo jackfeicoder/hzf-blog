@@ -1,36 +1,42 @@
-# 访客页CDT流量用量
+# 访客页 CDT 公网流量
 
-- 仅站点超级管理员可读取 `/api/visitors/traffic`，页面独立加载小卡片，其他访客数据不等待该请求。
-- 展示“本月已用 x / 20GB”。20GB是中国内地账号共享月额度，不是单实例独享；超额仍显示实际用量，进度条最多100%。
-- 使用BSS `DescribeInstanceBill`，按月、计费项查询CDT，保留零费用行并处理全部分页，汇总中国内地公网GB用量，排除跨地域及非中国内地用量。
-- 数据是已出账用量，不含未结算流量，约延迟24小时。当月账单可能调整，不作实时计费或精确防超额依据。
-- 官方未公布固定每天更新时间，因此采用用户确认的每天北京时间13:30同步，并非声称固定在官方更新后半小时。
-- 由 `hzf-cdt-usage.timer` 调用独立的一次性服务，不依赖网页访问或博客进程。重启后补执行错过的定时任务，同一北京时间自然日默认至多同步一次。
-- 可在角色绑定后执行一次 `systemctl start hzf-cdt-usage.service`；如当天已失败尝试，需要管理员显式执行后端虚拟环境Python的 `cdt_usage.py --force` 完成首次验证。
-- 快照位置默认 `backend/.runtime/cdt-usage.json`，原子替换，只有安全用量与时间字段；无密钥、原始账单、账号ID和实例IP。网页请求不调用账单API或元数据服务。
-- 查询失败保留最近成功快照，显示“同步暂未完成”；跨月隐藏上月用量并等待本月结果。空账单、未知单位或无法识别的地域不按0处理。
-- 不改账号、账单计费方式或CDT配置；API Action固定为只读 `DescribeInstanceBill`，权限不足不会尝试提权。
+- 仅超级管理员读取 `/api/visitors/traffic`；网页只读取服务器快照，独立加载，不阻塞访客列表。
+- 数据源为 `https://cdt.aliyuncs.com/` 的 `ListCdtInternetTraffic`（2021-08-13），不是 BSS 账单接口。
+- 展示本月中国内地 BGP 多线公网累计流量（含免费流量），汇总所有中国内地地域的顶层 `TrafficDetails[].Traffic`。不重复累加产品细分或阶梯细分。
+- 排除港澳台、海外地域和非 BGP 多线。字节除以 1024³，GB 显示保留最多五位小数。单独北京的值与全内地总和仅在只有北京使用量时相同。
+- 20GB 是账号共享的中国内地免费月额度，不是单实例额度；显示总公网用量，不是剩余额度或应付费用。超过 20GB 仍展示完整数值。
+- 每日北京时间 13:30 同步。该时间是用户选定的采集时间，不表示官方固定在此前更新；不承诺实时，也不沿用账单 24 小时延迟说明。
+- `hzf-cdt-usage.timer` 独立运行，同一北京时间自然日默认至多读取一次；重启补执行错过任务。
+- `backend/.runtime/cdt-usage.json` 原子保存安全用量与时间；不含凭证或原始响应。旧账单快照缺少数据源标记，直接隐藏，避免将账单 0 展示为流量 0。
+- 读取失败保留最近成功的同数据源快照；跨月隐藏上月数据。空响应、未知结构、负数或重复地域数据均不视为 0。
 
-## 最小RAM角色权限
+## RAM 角色权限
 
-在RAM创建自定义策略，绑定给可信实体为“阿里云服务→云服务器ECS”的普通服务角色，再在ECS实例的“授予/修改RAM角色”中绑定。
+角色信任 ECS 服务，并绑定博客 ECS 实例。自定义策略：
 
 ```json
 {
   "Version": "1",
   "Statement": [{
     "Effect": "Allow",
-    "Action": ["bssapi:DescribeInstanceBill"],
-    "Resource": ["*"],
-    "Condition": {"StringEquals": {"bssapi:ProductCode": "cdt"}}
+    "Action": ["cdt:ListCdtInternetTraffic"],
+    "Resource": "*"
   }]
 }
 ```
 
-优先使用ECS IMDSv2获取临时凭证，不创建长期AccessKey。备用配置支持仅服务器定时服务可读取的 `/root/.config/hzf-blog/cdt.env` 中 `CDT_ACCESS_KEY_ID`、`CDT_ACCESS_KEY_SECRET`、可选 `CDT_SECURITY_TOKEN`，该文件不进入仓库。不得给浏览器或公开接口返回凭证。
+使用 IMDSv2 临时凭证；无需长期 AccessKey。旧 `bssapi:DescribeInstanceBill` 权限不用于此功能。
 
-官方文档：
+绑定角色后的首次验证：
 
-- [DescribeInstanceBill与延迟说明](https://help.aliyun.com/zh/user-center/developer-reference/api-bssopenapi-2017-12-14-describeinstancebill)
-- [CDT账单与共享额度](https://help.aliyun.com/zh/cdt/query-bills)
-- [ECS绑定RAM角色](https://help.aliyun.com/zh/ecs/user-guide/attach-an-instance-ram-role-to-an-ecs-instance)
+```sh
+cd /www/wwwroot/blog.120115.xyz/backend
+venv/bin/python cdt_usage.py --force
+```
+
+日志只输出固定安全状态码；用量以同步时官方计数器为准，不硬编码控制台截图数值。
+
+官方参考：
+
+- [CDT 审计事件：公网累计用量查询](https://help.aliyun.com/zh/actiontrail/product-overview/audit-events-of-cdt)
+- [CDT 只读权限策略](https://help.aliyun.com/zh/ram/developer-reference/aliyuncdtreadonlyaccess)

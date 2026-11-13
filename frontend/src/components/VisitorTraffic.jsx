@@ -3,10 +3,10 @@ import { api } from '../api'
 import './visitor-traffic.css'
 
 const messages = {
-  credentials_missing: '尚未配置账单读取权限',
-  permission_denied: '账单查询权限不足，等待管理员配置',
-  unsupported_bill_data: '账单格式待核对，暂不展示用量',
-  data_unavailable: '尚未取得完整的本月账单',
+  credentials_missing: '尚未配置流量读取权限',
+  permission_denied: 'CDT流量查询权限不足，等待管理员配置',
+  unsupported_traffic_data: '流量格式待核对，暂不展示用量',
+  data_unavailable: '尚未取得完整的本月流量',
 }
 
 export default function VisitorTraffic() {
@@ -18,10 +18,10 @@ export default function VisitorTraffic() {
     return () => { active = false }
   }, [])
   const used = typeof data?.used_gb === 'number' && Number.isFinite(data.used_gb) ? data.used_gb : null
-  const amount = used === null ? '—' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 4 }).format(used)
+  const amount = used === null ? '—' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 5 }).format(used)
   const caption = failed ? '读取失败，下次打开页面重试' : !data ? '正在读取用量快照…' : used === null
-    ? messages[data.error_code] || '等待首次账单同步'
-    : data.status === 'stale' ? '同步暂未完成，显示最近成功的账单数据' : '中国内地账号共享额度 · 账单约延迟24小时'
+    ? messages[data.error_code] || '等待首次流量同步'
+    : data.status === 'stale' ? '同步暂未完成，显示最近成功的流量数据' : 'CDT本月公网流量 · 中国内地BGP多线 · 含免费流量'
   return <section className="card visitor-traffic" aria-label="本月公网流量">
     <div className="visitor-traffic-title"><span aria-hidden="true">↗</span><div>
       <strong>本月已用 <b>{amount}</b> / {data?.quota_gb ?? 20}GB</strong>
