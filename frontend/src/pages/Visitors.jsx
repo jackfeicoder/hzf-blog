@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { UserAvatar } from '../components/Layout'
 import { formatNum, timeAgo } from '../format'
+import VisitorTraffic from '../components/VisitorTraffic'
 
 export default function Visitors() {
   const [data, setData] = useState(null)
@@ -70,6 +71,8 @@ export default function Visitors() {
           </div>
         </div>
       </div>
+
+      <VisitorTraffic />
 
       {/* 实时访客数据流 */}
       <div className="card visitors-list-card">

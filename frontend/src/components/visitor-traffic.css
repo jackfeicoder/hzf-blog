@@ -1,0 +1,9 @@
+.visitor-traffic { display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 20px;margin:0 0 20px; }
+.visitor-traffic-title { display:flex;align-items:center;gap:12px;min-width:0; }
+.visitor-traffic-title>span { display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--primary-soft);color:var(--primary);font-size:24px;flex-shrink:0; }
+.visitor-traffic strong { display:block;font-size:15px; }
+.visitor-traffic strong b { color:var(--primary);font-variant-numeric:tabular-nums; }
+.visitor-traffic small { display:block;color:var(--muted);font-size:11px;line-height:1.6;margin-top:3px; }
+.visitor-traffic-detail { text-align:right;flex-shrink:0; }
+.visitor-traffic progress { width:150px;height:6px;accent-color:var(--primary); }
+@media(max-width:600px) { .visitor-traffic { align-items:flex-start;flex-direction:column;gap:8px;padding:14px; }.visitor-traffic-detail { text-align:left;padding-left:52px; } }

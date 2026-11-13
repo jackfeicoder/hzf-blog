@@ -1,0 +1,21 @@
+[Unit]
+Description=Read-only daily CDT billing snapshot for CodeBlog
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/www/wwwroot/blog.120115.xyz/backend
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=-/root/.config/hzf-blog/cdt.env
+ExecStart=/www/wwwroot/blog.120115.xyz/backend/venv/bin/python -B /www/wwwroot/blog.120115.xyz/backend/cdt_usage.py
+TimeoutStartSec=120
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/www/wwwroot/blog.120115.xyz/backend/.runtime
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+

@@ -65,6 +65,16 @@ test('page tracking sends pathname only and does not invalidate homepage cache',
   assert.equal(calls.length, 2)
 })
 
+test('visitor traffic reads the admin-only snapshot with session and without client caching', async () => {
+  setToken('owner-session-fixture')
+  await api.visitorTraffic()
+  await api.visitorTraffic()
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].path, '/api/visitors/traffic')
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer owner-session-fixture')
+  assert.equal(calls[0].options.method, 'GET')
+})
+
 test('home requests share cached responses with sidebars', async () => {
   await Promise.all([api.listPosts(), api.listPosts()])
   await api.listPosts()

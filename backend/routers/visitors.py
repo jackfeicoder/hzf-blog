@@ -13,6 +13,7 @@ import models
 import schemas
 from schemas import PublicUserBrief as UserBrief
 from public_identity import public_name, ADMIN_LOGIN, ADMIN_ALIAS
+from cdt_usage import cached_usage
 
 
 router = APIRouter(prefix="/api/visitors", tags=["visitors"])
@@ -142,6 +143,13 @@ def track_visit(data: VisitTrackIn, request: Request, db: Session = Depends(get_
     consume_security_attempt(('visitor-track', get_client_ip(request)), limit=120)
     record_visit(request, db, user, path=data.path)
     return Response(status_code=204, headers={'Cache-Control': 'private, no-store'})
+
+
+@router.get('/traffic')
+def traffic_usage(response: Response, user: models.User = Depends(require_superadmin)):
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['Vary'] = 'Authorization'
+    return cached_usage()
 
 
 @router.get("", response_model=VisitorsSummaryOut)

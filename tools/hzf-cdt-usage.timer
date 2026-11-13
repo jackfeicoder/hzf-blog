@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily CodeBlog CDT billing refresh at 13:30 China time
+
+[Timer]
+OnCalendar=*-*-* 13:30:00 Asia/Shanghai
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=0
+Unit=hzf-cdt-usage.service
+
+[Install]
+WantedBy=timers.target
+
